@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CV Match AI | Tailor Your Future</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <style>
+        :root {
+            --primary-blue: #2563eb;
+            --light-blue: #eff6ff;
+            --dark-blue: #1e40af;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border: #f3f4f6;
+            --sidebar-bg: #f8fafc;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: #ffffff;
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            padding: 2rem 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar img {
+            width: 80px;
+            margin-bottom: 1rem;
+        }
+
+        .sidebar h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .sidebar-info {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .sidebar hr {
+            border: 0;
+            border-top: 1px solid #e2e8f0;
+            margin: 1.5rem 0;
+        }
+
+        .sidebar-caption {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            margin-top: 2rem;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex-grow: 1;
+            padding: 3rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .main-header {
+            color: var(--primary-blue);
+            font-weight: 700;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .sub-header {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 2rem;
+        }
+
+        .section-title {
+            color: var(--dark-blue);
+            font-weight: 600;
+            font-size: 1.4rem;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid var(--primary-blue);
+            padding-left: 10px;
+        }
+
+        /* Inputs */
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        input:focus, textarea:focus {
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Expanders */
+        .expander {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+
+        .expander-header {
+            background: #fff;
+            padding: 1rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .expander-content {
+            padding: 1.5rem;
+            display: block; /* Shown by default if expanded */
+        }
+
+        .expander.collapsed .expander-content {
+            display: none;
+        }
+
+        /* Button */
+        .btn-generate {
+            background-color: var(--primary-blue);
+            color: white;
+            border-radius: 8px;
+            padding: 0.8rem;
+            width: 100%;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 1rem;
+            font-size: 1rem;
+        }
+
+        .btn-generate:hover {
+            background-color: var(--dark-blue);
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.4);
+            transform: translateY(-1px);
+        }
+
+        /* Results Section */
+        #results-container {
+            display: none;
+            margin-top: 3rem;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 2rem;
+        }
+
+        .metrics {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            flex: 1;
+            padding: 1.5rem;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .metric-label { font-size: 0.8rem; color: var(--text-muted); }
+        .metric-value { font-size: 1.8rem; font-weight: 700; color: var(--primary-blue); }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab.active {
+            color: var(--primary-blue);
+            border-bottom-color: var(--primary-blue);
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Result styling */
+        .info-box {
+            background-color: #eff6ff;
+            color: #1e40af;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            border-left: 4px solid var(--primary-blue);
+        }
+
+        .success-box {
+            background-color: #f0fdf4;
+            color: #166534;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border: 1px solid #bbf7d0;
+        }
+
+        .keyword-tag {
+            display: inline-block;
+            background-color: var(--light-blue);
+            color: var(--primary-blue);
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        footer {
+            text-align: center;
+            padding: 3rem 0;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            border-top: 1px solid #f3f4f6;
+            margin-top: 4rem;
+        }
+
+        /* Loading Overlay */
+        #loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <img src="https://cdn-icons-png.flaticon.com/512/2103/2103633.png" alt="Logo">
+        <h2>CV Match AI</h2>
+        <div class="sidebar-info">
+            Tailor your CV to perfection using AI-driven insights.
+        </div>
+        <hr>
+        <div style="font-weight: 600; margin-bottom: 0.5rem;">How it works</div>
+        <ul style="font-size: 0.9rem; list-style: none; color: var(--text-main);">
+            <li style="margin-bottom: 0.5rem;">1. <b>Upload</b> your current CV</li>
+            <li style="margin-bottom: 0.5rem;">2. <b>Fill</b> in your details</li>
+            <li style="margin-bottom: 0.5rem;">3. <b>Paste</b> the Job Description</li>
+            <li style="margin-bottom: 0.5rem;">4. <b>Generate</b> a tailored version</li>
+        </ul>
+        <hr>
+        <div class="sidebar-caption">v1.0.0 | University Project</div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="main-header">CV Match AI 🚀</div>
+        <div class="sub-header">Bridge the gap between your experience and your dream job.</div>
+
+        <div class="grid">
+            <!-- Column 1 -->
+            <div>
+                <div class="section-title">1. Upload & Basic Info</div>
+                
+                <div class="input-group">
+                    <label>Upload your CV (PDF, DOCX, or TXT)</label>
+                    <input type="file">
+                </div>
+
+                <!-- Expandable Personal Info -->
+                <div class="expander">
+                    <div class="expander-header" onclick="toggleExpander(this)">
+                        <span>👤 Applicant Personal Information</span>
+                        <span>▼</span>
+                    </div>
+                    <div class="expander-content">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div class="input-group">
+                                <label>Full Name</label>
+                                <input type="text" id="name" placeholder="Jane Doe">
+                            </div>
+                            <div class="input-group">
+                                <label>Email Address</label>
+                                <input type="text" id="email" placeholder="jane@example.com">
+                            </div>
+                            <div class="input-group">
+                                <label>Phone Number</label>
+                                <input type="text">
+                            </div>
+                            <div class="input-group">
+                                <label>LinkedIn / Portfolio Link</label>
+                                <input type="text">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expandable Education -->
+                <div class="expander collapsed">
+                    <div class="expander-header" onclick="toggleExpander(this)">
+                        <span>🎓 Education & Skills</span>
+                        <span>▶</span>
+                    </div>
+                    <div class="expander-content">
+                        <div class="input-group">
+                            <label>Education</label>
+                            <textarea id="education" placeholder="B.Sc. Computer Science..."></textarea>
+                        </div>
+                        <div class="input-group">
+                            <label>Skills (Comma separated)</label>
+                            <textarea id="skills" placeholder="Python, SQL, Project Management..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expandable Experience -->
+                <div class="expander collapsed">
+                    <div class="expander-header" onclick="toggleExpander(this)">
+                        <span>💼 Experience & Projects</span>
+                        <span>▶</span>
+                    </div>
+                    <div class="expander-content">
+                        <div class="input-group">
+                            <label>Professional Experience</label>
+                            <textarea id="experience" placeholder="Include roles, companies..."></textarea>
+                        </div>
+                        <div class="input-group">
+                            <label>Key Projects</label>
+                            <textarea id="projects" placeholder="Describe 2-3 significant projects..."></textarea>
+                        </div>
+                        <div class="input-group">
+                            <label>Languages</label>
+                            <input type="text" placeholder="English (Native)...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 2 -->
+            <div>
+                <div class="section-title">2. Target Job Details</div>
+                <div class="input-group">
+                    <label>Target Job Role Name</label>
+                    <input type="text" id="job_role" placeholder="e.g. Data Analyst Intern">
+                </div>
+                <div class="input-group">
+                    <label>Job Description / Requirements</label>
+                    <textarea id="job_desc" style="height: 300px;" placeholder="Paste the job description here..."></textarea>
+                </div>
+
+                <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+                <button class="btn-generate" onclick="generateAnalysis()">✨ Generate Tailored CV</button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-container">
+            <div class="section-title">3. Analysis & Tailored Results</div>
+            
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">Match Score</div>
+                    <div class="metric-value">82%</div>
+                    <div style="color: #16a34a; font-size: 0.8rem;">+5% vs average</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Keywords Found</div>
+                    <div class="metric-value" id="kw-count">7</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Recruiter Appeal</div>
+                    <div class="metric-value">High</div>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab(0)">📄 Adjusted Content</div>
+                <div class="tab" onclick="switchTab(1)">💡 Recommendations</div>
+                <div class="tab" onclick="switchTab(2)">✉️ Cover Letter</div>
+            </div>
+
+            <div id="tab-0" class="tab-panel active">
+                <h3 style="margin-bottom: 1rem;">Tailored Summary</h3>
+                <div id="adjusted-summary" class="info-box"></div>
+                
+                <h3 style="margin: 1.5rem 0 1rem;">Suggested Bullet Points for this Role</h3>
+                <ul id="bullets-list" style="margin-left: 1.5rem; line-height: 1.8;"></ul>
+                
+                <h3 style="margin: 1.5rem 0 1rem;">Missing Keywords to Add</h3>
+                <div id="keywords-tags"></div>
+            </div>
+
+            <div id="tab-1" class="tab-panel">
+                <h3 style="margin-bottom: 1rem;">How to Improve Your CV</h3>
+                <div id="recs-list"></div>
+                
+                <h3 style="margin: 1.5rem 0 1rem;">Next Steps</h3>
+                <ol style="margin-left: 1.5rem; line-height: 1.8;">
+                    <li><b>Update your LinkedIn</b> with the missing keywords found.</li>
+                    <li><b>Re-word your top project</b> using the suggested bullet points.</li>
+                    <li><b>Check formatting</b>: Ensure your contact info is easy to find.</li>
+                </ol>
+            </div>
+
+            <div id="tab-2" class="tab-panel">
+                <h3 style="margin-bottom: 1rem;">Generated Short Cover Letter Summary</h3>
+                <textarea id="cover-letter" style="height: 250px; background: #f8fafc; font-family: monospace;"></textarea>
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem;">Pro tip: Personalize the first paragraph with a specific detail about the company.</div>
+            </div>
+        </div>
+
+        <footer>
+            CV Match AI - University Project Prototype<br>
+            Built with HTML/JS & ❤️
+        </footer>
+    </main>
+
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div style="font-weight: 600;">AI is analyzing your profile and the job requirements...</div>
+    </div>
+
+    <script>
+        function toggleExpander(header) {
+            const expander = header.parentElement;
+            expander.classList.toggle('collapsed');
+            const icon = header.children[1];
+            icon.textContent = expander.classList.contains('collapsed') ? '▶' : '▼';
+        }
+
+        function switchTab(index) {
+            document.querySelectorAll('.tab').forEach((t, i) => {
+                t.classList.toggle('active', i === index);
+            });
+            document.querySelectorAll('.tab-panel').forEach((p, i) => {
+                p.classList.toggle('active', i === index);
+            });
+        }
+
+        function generateAnalysis() {
+            const name = document.getElementById('name').value;
+            const role = document.getElementById('job_role').value;
+            const desc = document.getElementById('job_desc').value;
+
+            if (!name || !role || !desc) {
+                alert("Please fill in at least your Name, Job Role, and Job Description.");
+                return;
+            }
+
+            document.getElementById('loading-overlay').style.display = 'flex';
+
+            setTimeout(() => {
+                document.getElementById('loading-overlay').style.display = 'none';
+                const results = document.getElementById('results-container');
+                results.style.display = 'block';
+                
+                // Populate mock results
+                const education = document.getElementById('education').value || "your background";
+                const projects = document.getElementById('projects').value || "recent initiatives";
+                const firstSkill = (document.getElementById('skills').value.split(',')[0]) || "key industry tools";
+
+                document.getElementById('adjusted-summary').textContent = `Aspiring ${role} with a strong foundation in ${education}. Proven ability to handle complex projects like '${projects.substring(0,30)}...' while utilizing ${firstSkill}. Dedicated to driving value through data-driven decisions and professional excellence.`;
+
+                const bullets = [
+                    `Leveraged core ${role} principles to optimize project outcomes by 20%.`,
+                    `Collaborated with cross-functional teams to deliver ${projects.substring(0,20)}... initiatives.`,
+                    `Applied technical proficiency in ${firstSkill} to solve complex stakeholder requirements.`
+                ];
+                document.getElementById('bullets-list').innerHTML = bullets.map(b => `<li>${b}</li>`).join('');
+
+                const kws = ["Data Storytelling", "Strategic Planning", "Cross-functional Collaboration"];
+                document.getElementById('keywords-tags').innerHTML = kws.map(kw => `<span class="keyword-tag">${kw}</span>`).join('');
+                document.getElementById('kw-count').textContent = kws.length + 4;
+
+                const recs = [
+                    "Quantify your achievements: Instead of 'Helped team', use 'Increased efficiency by 15%'.",
+                    "Move your 'Skills' section higher up to catch the recruiter's eye immediately.",
+                    "Tailor your project descriptions to highlight 'Impact' rather than just 'Tasks'.",
+                    `Explicitly mention your experience with ${kws[0]} if you have any foundation in it.`
+                ];
+                document.getElementById('recs-list').innerHTML = recs.map(r => `<div class="success-box">✅ ${r}</div>`).join('');
+
+                document.getElementById('cover-letter').value = `Dear Hiring Manager,\n\nI am writing to express my strong interest in the ${role} position. With a background in ${education} and hands-on experience in projects involving ${projects.substring(0,50)}, I am confident in my ability to contribute effectively to your team. My proactive approach and technical skills align perfectly with the requirements mentioned in your job description...`;
+
+                results.scrollIntoView({ behavior: 'smooth' });
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
