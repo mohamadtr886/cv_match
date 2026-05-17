@@ -572,43 +572,13 @@ def generate_docx_executive(cv_data, output_lang):
     buffer.seek(0)
     return buffer
 
-# --- APP LAYOUT (NAVIGATION) ---
+# --- APP LAYOUT (TABS) ---
 st.markdown('<div class="main-header">CV Match AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Premium Career Strategy & Tailoring Suite</div>', unsafe_allow_html=True)
-
 tab_titles = ["The Job", "CV Content", "Analysis", "Refinement", "Preview", "Export"]
+tabs = st.tabs(tab_titles)
 
-# Initialize or sync active_tab
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "The Job"
-
-# Custom Tab Headers (mimicking premium tabs but programmable)
-tab_cols = st.columns(len(tab_titles))
-for i, title in enumerate(tab_titles):
-    is_active = st.session_state.active_tab == title
-    if tab_cols[i].button(title, key=f"nav_tab_{i}", use_container_width=True, 
-                          type="primary" if is_active else "secondary"):
-        st.session_state.active_tab = title
-        st.rerun()
-
-current_idx = tab_titles.index(st.session_state.active_tab)
-
-# Helper for Navigation Buttons
-def render_nav_buttons(idx):
-    st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 3, 1])
-    if idx > 0:
-        if c1.button("← Back", key=f"back_{idx}", use_container_width=True):
-            st.session_state.active_tab = tab_titles[idx - 1]
-            st.rerun()
-    if idx < len(tab_titles) - 1:
-        if c3.button("Next →", key=f"next_{idx}", use_container_width=True):
-            st.session_state.active_tab = tab_titles[idx + 1]
-            st.rerun()
-
-# --- STEP CONTENT ---
-
-if current_idx == 0:
+with tabs[0]:
     st.markdown('<div class="content-card"><span class="section-label">Target Position & Requirements</span>', unsafe_allow_html=True)
     st.write("Define your target. Paste the description or insert a link to start the semantic analysis.")
     st.session_state.job_role = st.text_input("What is your target job title?", value=st.session_state.job_role, placeholder="e.g., Software Engineering Intern")
@@ -623,9 +593,8 @@ if current_idx == 0:
         st.session_state.job_role, st.session_state.job_desc = "Junior Data Analyst", "Requirements: Proficient in SQL and Python. Experience with Tableau or PowerBI. Knowledge of Git."
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
-    render_nav_buttons(0)
 
-elif current_idx == 1:
+with tabs[1]:
     st.markdown('<div class="content-card"><span class="section-label">Your Professional Profile</span>', unsafe_allow_html=True)
     st.session_state.input_method = st.radio("Choose input method:", ["Upload File", "Paste Text", "Manual Entry"], horizontal=True)
     if st.session_state.input_method == "Upload File":
@@ -654,9 +623,8 @@ elif current_idx == 1:
                 if st.button(f"✨ Suggest {m_fields[key][0]}", key=f"ai_{key}"): st.session_state.manual_cv_data[key] = get_ai_suggestion(st.session_state.job_role, key)
                 st.session_state.manual_cv_data[key] = st.text_area(m_fields[key][0], value=st.session_state.manual_cv_data.get(key, ""), placeholder=m_fields[key][1], key=f"input_{key}", label_visibility="collapsed", height=100)
     st.markdown('</div>', unsafe_allow_html=True)
-    render_nav_buttons(1)
 
-elif current_idx == 2:
+with tabs[2]:
     cv_p = st.session_state.cv_full_text or any(st.session_state.manual_cv_data.values())
     if not st.session_state.job_desc or not cv_p: st.warning("Please provide Job Description and CV content.")
     else:
@@ -684,9 +652,8 @@ elif current_idx == 2:
             for m in missing[:5]: st.markdown(f"<div style='background-color:#fff1f2; border-left:4px solid #e11d48; padding:8px; margin-bottom:8px; border-radius:4px;'><strong>{m.capitalize()}</strong><br><span style='font-size:0.85rem; color:#9f1239;'>Emphasize this skill.</span></div>", unsafe_allow_html=True)
         st.session_state.analysis_results = {"matches": matches, "missing": missing, "score": score}
         st.markdown('</div>', unsafe_allow_html=True)
-    render_nav_buttons(2)
 
-elif current_idx == 3:
+with tabs[3]:
     st.markdown('<div class="content-card"><span class="section-label">Refinement Questions</span>', unsafe_allow_html=True)
     missing = st.session_state.analysis_results.get("missing", [])
     if not missing: st.write("No major gaps found!")
@@ -698,9 +665,8 @@ elif current_idx == 3:
         st.write(f"**Question 2:** {q2}")
         st.session_state.follow_up_answers["q2"] = st.text_area("A2", value=st.session_state.follow_up_answers.get("q2", ""), key="ans2", label_visibility="collapsed")
     st.markdown('</div>', unsafe_allow_html=True)
-    render_nav_buttons(3)
 
-elif current_idx == 4:
+with tabs[4]:
     st.markdown('<div class="content-card"><span class="section-label">Executive CV Preview</span>', unsafe_allow_html=True)
     st.session_state.active_lang = st.radio("Choose Document Language:", ["English", "Hebrew", "Arabic"], horizontal=True, key="lang_select")
     base_data = st.session_state.manual_cv_data.copy() if any(st.session_state.manual_cv_data.values()) else classify_sections_refined(st.session_state.cv_full_text)
@@ -711,9 +677,8 @@ elif current_idx == 4:
     st.markdown('</div>', unsafe_allow_html=True)
     st.success("✨ Ready for download in the next tab.")
     st.markdown('</div>', unsafe_allow_html=True)
-    render_nav_buttons(4)
 
-elif current_idx == 5:
+with tabs[5]:
     st.markdown('<div class="content-card" style="text-align:center;"><span class="section-label">Final Export</span>', unsafe_allow_html=True)
     if not st.session_state.final_cv_data: st.warning("Please preview your CV first.")
     else:
@@ -729,4 +694,4 @@ elif current_idx == 5:
         with c2:
             st.download_button("📁 Download DOCX", generate_docx_executive(cv_f, st.session_state.active_lang), file_name=f"{f_name}.docx", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
-    render_nav_buttons(5)
+
