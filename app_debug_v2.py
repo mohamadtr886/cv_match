@@ -56,30 +56,37 @@ for k, v in defaults.items():
 # --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
     }
 
-    /* ── VARIABLES ── */
+    /* ── DESIGN TOKENS ── */
     :root {
-        --pink: #be185d;
-        --pink-light: #fce7f3;
-        --pink-mid: #f9a8d4;
-        --dark: #191919;
-        --muted: #6b6b6b;
-        --border: #e9e9e7;
-        --bg: #f8f8f7;
+        --blue:        #2563EB;
+        --blue-hover:  #1D4ED8;
+        --blue-light:  #EFF6FF;
+        --blue-mid:    #BFDBFE;
+        --text:        #0F172A;
+        --muted:       #64748B;
+        --border:      #E5E7EB;
+        --bg:          #F8FAFC;
+        --card:        #FFFFFF;
+        --success:     #16A34A;
+        --warning:     #F59E0B;
+        --error:       #DC2626;
     }
 
-    /* ── STREAMLIT OVERRIDES ── */
+    /* ── GLOBAL RESETS ── */
     .block-container {
         padding-top: 0 !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
-        max-width: 860px !important;
+        max-width: 880px !important;
+        background: var(--bg) !important;
     }
+    .stApp { background: var(--bg) !important; }
     #MainMenu, footer, header { visibility: hidden; }
     div[data-testid="stTabs"] { display: none; }
 
@@ -87,11 +94,12 @@ st.markdown("""
     .rp-step-bar {
         display: flex;
         align-items: center;
-        background: var(--bg);
+        background: var(--card);
         border: 1px solid var(--border);
         border-radius: 12px;
-        padding: 12px 16px;
+        padding: 12px 18px;
         margin-bottom: 28px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         gap: 0;
     }
     .rp-step-item { display: flex; align-items: center; gap: 8px; flex: 1; }
@@ -101,16 +109,16 @@ st.markdown("""
         font-size: 10px; font-weight: 700; flex-shrink: 0;
         transition: all 0.2s;
     }
-    .rp-dot-done   { background: var(--pink); color: white; }
-    .rp-dot-active { background: var(--dark); color: white; }
-    .rp-dot-todo   { background: var(--border); color: #9b9b9b; }
-    .rp-step-name { font-size: 12px; font-weight: 500; }
-    .rp-name-done   { color: var(--pink); font-weight: 600; }
-    .rp-name-active { color: var(--dark); font-weight: 600; }
-    .rp-name-todo   { color: #9b9b9b; }
-    .rp-connector { height: 2px; width: 20px; flex-shrink: 0; }
-    .rp-conn-done { background: var(--pink); }
-    .rp-conn-todo { background: var(--border); }
+    .rp-dot-done   { background: var(--blue); color: white; }
+    .rp-dot-active { background: var(--text); color: white; }
+    .rp-dot-todo   { background: var(--border); color: #9CA3AF; }
+    .rp-step-name  { font-size: 12px; font-weight: 500; }
+    .rp-name-done  { color: var(--blue); font-weight: 600; }
+    .rp-name-active{ color: var(--text); font-weight: 700; }
+    .rp-name-todo  { color: #9CA3AF; }
+    .rp-connector  { height: 2px; width: 20px; flex-shrink: 0; }
+    .rp-conn-done  { background: var(--blue); }
+    .rp-conn-todo  { background: var(--border); }
 
     /* ── LOGO / HEADER ── */
     .rp-header {
@@ -121,215 +129,281 @@ st.markdown("""
         border-bottom: 1px solid var(--border);
         margin-bottom: 28px;
     }
-    .rp-logo-box {
-        width: 32px; height: 32px;
-        flex-shrink: 0;
-    }
-    .rp-brand { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; color: var(--dark); }
+    .rp-brand   { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; color: var(--text); }
     .rp-tagline { font-size: 13px; color: var(--muted); margin-left: auto; }
 
     /* ── PAGE TITLES ── */
-    .rp-page-badge { font-size: 11px; color: #9b9b9b; font-weight: 500; letter-spacing: 0.3px; margin-bottom: 6px; }
-    .rp-page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; color: var(--dark); margin-bottom: 5px; }
-    .rp-page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 24px; line-height: 1.5; }
+    .rp-page-badge { font-size: 11px; color: var(--blue); font-weight: 600; letter-spacing: 0.6px; margin-bottom: 6px; text-transform: uppercase; }
+    .rp-page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; color: var(--text); margin-bottom: 5px; }
+    .rp-page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 24px; line-height: 1.6; }
 
     /* ── CARDS ── */
-    .rp-card {
-        background: var(--bg);
+    .rp-card, .rp-card-white, .content-card {
+        background: var(--card);
         border: 1px solid var(--border);
         border-radius: 12px;
-        padding: 20px 22px;
+        padding: 16px 20px;
         margin-bottom: 16px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
     }
-    .rp-card-white {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 20px 22px;
-        margin-bottom: 16px;
+    .rp-card { background: var(--bg); }
+
+    /* ── PILLS ── */
+    .rp-pill { font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 9999px; }
+    .rp-pill-strong  { background: #DCFCE7; color: #166534; }
+    .rp-pill-partial { background: #FEF9C3; color: #92400E; }
+    .rp-pill-missing { background: #FEE2E2; color: #991B1B; }
+
+    /* ── TIP BOX ── */
+    .rp-tip {
+        background: var(--blue-light);
+        border: 1px solid var(--blue-mid);
+        border-radius: 10px;
+        padding: 14px 16px;
+        font-size: 13px;
+        color: #1E40AF;
+        line-height: 1.6;
+        margin-top: 14px;
     }
 
-    /* ── SCORE DARK ── */
+    /* ── REFINEMENT QUESTION NUM ── */
+    .rp-q-num {
+        display: inline-flex; align-items: center; justify-content: center;
+        background: var(--blue); color: white;
+        width: 20px; height: 20px; border-radius: 50%;
+        font-size: 10px; font-weight: 700; margin-right: 6px;
+    }
+    .rp-q-text { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
+
+    /* ── DOWNLOAD CARDS ── */
+    .rp-dl-fmt  { font-weight: 700; font-size: 15px; margin-bottom: 3px; color: var(--text); }
+    .rp-dl-desc { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+    /* ── CHECKLIST ── */
+    .rp-checklist { border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .rp-checklist-title { font-weight: 600; font-size: 13px; margin-bottom: 10px; color: var(--text); }
+    .rp-check-item { font-size: 12px; color: var(--muted); padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .rp-check-item:last-child { border-bottom: none; }
+
+    /* ── ALERT BOXES ── */
+    .alert-box { padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; margin-bottom: 12px; }
+    .alert-green  { background: #DCFCE7; color: #166534; }
+    .alert-orange { background: #FEF3C7; color: #92400E; }
+    .alert-red    { background: #FEE2E2; color: #991B1B; }
+
+    /* ── PRIMARY BUTTON ── */
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        font-family: 'Inter', sans-serif !important;
+        transition: all 0.15s !important;
+        padding: 8px 18px !important;
+    }
+    .stButton > button[kind="primary"],
+    .stDownloadButton > button[kind="primary"] {
+        background: var(--blue) !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 1px 3px rgba(37,99,235,0.3) !important;
+    }
+    .stButton > button[kind="primary"]:hover,
+    .stDownloadButton > button[kind="primary"]:hover {
+        background: var(--blue-hover) !important;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.4) !important;
+    }
+    .stButton > button[kind="secondary"],
+    .stDownloadButton > button[kind="secondary"] {
+        background: transparent !important;
+        color: var(--blue) !important;
+        border: 1.5px solid var(--blue) !important;
+    }
+    .stButton > button[kind="secondary"]:hover,
+    .stDownloadButton > button[kind="secondary"]:hover {
+        background: var(--blue-light) !important;
+    }
+    /* Disabled button */
+    .stButton > button:disabled {
+        background: #E5E7EB !important;
+        color: #9CA3AF !important;
+        border: none !important;
+        box-shadow: none !important;
+        cursor: not-allowed !important;
+    }
+
+    /* ── INPUT FIELDS ── */
+    .stTextInput input, .stTextArea textarea {
+        border-radius: 8px !important;
+        border: 1.5px solid var(--border) !important;
+        background: var(--card) !important;
+        font-size: 13px !important;
+        font-family: 'Inter', sans-serif !important;
+        color: var(--text) !important;
+        transition: border-color 0.15s !important;
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: var(--blue) !important;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1) !important;
+        background: white !important;
+    }
+    .stTextInput label, .stTextArea label, .stFileUploader label {
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        color: var(--text) !important;
+    }
+
+    /* ── RADIO AS SELECTABLE CARDS ── */
+    div[data-testid="stRadio"] > label {
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        color: var(--text) !important;
+        margin-bottom: 10px !important;
+    }
+    div[data-testid="stRadio"] > div[role="radiogroup"] {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 10px !important;
+        flex-wrap: wrap !important;
+    }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        background: var(--card) !important;
+        border: 1.5px solid var(--border) !important;
+        border-radius: 8px !important;
+        padding: 10px 16px !important;
+        cursor: pointer !important;
+        transition: all 0.15s !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: var(--text) !important;
+        min-width: 130px !important;
+    }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
+        border-color: var(--blue) !important;
+        background: var(--blue-light) !important;
+        color: var(--blue) !important;
+        font-weight: 600 !important;
+    }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
+        border-color: var(--blue) !important;
+    }
+
+    /* ── EXPANDER ── */
+    .streamlit-expanderHeader {
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        color: var(--text) !important;
+        border-radius: 8px !important;
+        background: var(--card) !important;
+        border: 1px solid var(--border) !important;
+    }
+
+    /* ── STREAMLIT INFO / WARNING / ERROR ── */
+    div[data-testid="stNotification"] {
+        border-radius: 10px !important;
+    }
+
+    /* ── SCORE DARK CARD ── */
     .rp-score-dark {
-        background: var(--dark);
+        background: var(--text);
         color: white;
         border-radius: 12px;
         padding: 22px 26px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        display: flex; align-items: center; justify-content: space-between;
         margin-bottom: 14px;
     }
-    .rp-score-num { font-size: 48px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
-    .rp-score-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 3px; letter-spacing: 0.4px; }
-    .rp-score-desc { font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px; }
+    .rp-score-num   { font-size: 48px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+    .rp-score-label { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 3px; letter-spacing: 0.4px; }
+    .rp-score-desc  { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 4px; }
     .rp-score-right { text-align: right; font-size: 12px; line-height: 2.2; }
-    .rp-score-s { color: #86efac; }
+    .rp-score-s { color: #86EFAC; }
     .rp-score-p { color: rgba(255,255,255,0.5); }
     .rp-score-m { color: rgba(255,255,255,0.3); }
 
     /* ── ANALYSIS ITEMS ── */
     .rp-analysis-item {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 9px 13px; border-radius: 7px;
+        padding: 9px 13px; border-radius: 8px;
         background: var(--bg); border: 1px solid var(--border);
-        margin-bottom: 5px; font-size: 13px;
+        margin-bottom: 5px; font-size: 13px; color: var(--text);
     }
-    .rp-pill {
-        font-size: 11px; font-weight: 500;
-        padding: 2px 9px; border-radius: 9999px;
-    }
-    .rp-pill-strong  { background: #dcfce7; color: #166534; }
-    .rp-pill-partial { background: #fef9c3; color: #92400e; }
-    .rp-pill-missing { background: #fee2e2; color: #991b1b; }
-
-    /* ── TIP BOX ── */
-    .rp-tip {
-        background: var(--pink-light);
-        border: 1px solid var(--pink-mid);
-        border-radius: 10px;
-        padding: 14px 16px;
-        font-size: 13px;
-        color: #831843;
-        line-height: 1.6;
-        margin-top: 14px;
-    }
-
-    /* ── REFINEMENT Q ── */
-    .rp-q-num {
-        display: inline-flex; align-items: center; justify-content: center;
-        background: var(--pink); color: white;
-        width: 20px; height: 20px; border-radius: 50%;
-        font-size: 10px; font-weight: 700;
-        margin-right: 6px;
-    }
-    .rp-q-text { font-size: 13px; font-weight: 500; color: var(--dark); margin-bottom: 8px; }
-
-    /* ── LANG TABS ── */
-    .rp-lang-tab {
-        display: inline-block;
-        padding: 6px 16px;
-        border-radius: 6px;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        margin-right: 6px;
-        border: 1px solid var(--border);
-        color: var(--muted);
-    }
-    .rp-lang-tab-active {
-        background: var(--pink);
-        color: white;
-        border-color: var(--pink);
-    }
-
-    /* ── DOWNLOAD CARDS ── */
-    .rp-dl-fmt  { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
-    .rp-dl-desc { font-size: 12px; color: #9b9b9b; margin-bottom: 14px; }
-
-    /* ── CHECKLIST ── */
-    .rp-checklist { border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; background: white; }
-    .rp-checklist-title { font-weight: 600; font-size: 13px; margin-bottom: 10px; }
-    .rp-check-item { font-size: 12px; color: var(--muted); padding: 4px 0; }
-
-    /* ── BUTTON OVERRIDES ── */
-    .stButton > button {
-        border-radius: 7px !important;
-        font-weight: 500 !important;
-        font-size: 13px !important;
-        font-family: 'Inter', sans-serif !important;
-        transition: all 0.15s !important;
-    }
-    .stButton > button[kind="primary"] {
-        background: var(--dark) !important;
-        color: white !important;
-        border: none !important;
-    }
-    .stButton > button[kind="primary"]:hover {
-        background: #333 !important;
-    }
-    /* Pink primary button via class trick */
-    .btn-pink-wrapper .stButton > button {
-        background: var(--pink) !important;
-        color: white !important;
-        border: none !important;
-    }
-
-    /* ── INPUT OVERRIDES ── */
-    .stTextInput input, .stTextArea textarea {
-        border-radius: 7px !important;
-        border: 1px solid var(--border) !important;
-        background: #fafafa !important;
-        font-size: 13px !important;
-        font-family: 'Inter', sans-serif !important;
-    }
-    .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: var(--dark) !important;
-        background: white !important;
-        box-shadow: none !important;
-    }
-
-    /* ── ALERT OVERRIDES ── */
-    .alert-green  { background: #dcfce7; color: #166534; padding:12px 16px; border-radius:8px; font-size:13px; }
-    .alert-orange { background: #ffedd5; color: #9a3412; padding:12px 16px; border-radius:8px; font-size:13px; }
-    .alert-red    { background: #fee2e2; color: #991b1b; padding:12px 16px; border-radius:8px; font-size:13px; }
 
     /* ── LANDING PAGE ── */
-    .rp-landing {
-        min-height: 100vh;
-        background: radial-gradient(ellipse 90% 50% at 50% -5%, #fce7f3 0%, #fff 60%);
-    }
-    .rp-hero { max-width: 640px; margin: 0 auto; padding: 80px 32px 56px; text-align: center; }
-    .rp-hero-badge {
-        display: inline-flex; align-items: center; gap: 6px;
-        background: var(--pink-light); color: var(--pink);
-        border-radius: 20px; padding: 5px 14px;
-        font-size: 12px; font-weight: 600; margin-bottom: 24px;
-    }
+    .rp-hero { max-width: 640px; margin: 0 auto; padding: 80px 32px 48px; text-align: center; }
     .rp-hero h1 {
-        font-size: 52px; font-weight: 800; line-height: 1.08;
-        letter-spacing: -2.5px; margin-bottom: 18px; color: var(--dark);
+        font-size: 50px; font-weight: 800; line-height: 1.1;
+        letter-spacing: -2px; margin-bottom: 20px; color: var(--text);
     }
-    .rp-hero h1 span { color: var(--pink); }
-    .rp-hero p { font-size: 16px; color: var(--muted); line-height: 1.65; max-width: 420px; margin: 0 auto 32px; }
-    .rp-social-proof { text-align: center; font-size: 12px; color: #9b9b9b; padding: 16px 0 0; }
-    .rp-features { max-width: 840px; margin: 48px auto 0; padding: 0 32px 64px; display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
-    .rp-feature {
-        background: white; border: 1px solid var(--border);
-        border-radius: 12px; padding: 22px;
-        position: relative; overflow: hidden;
-        transition: box-shadow 0.2s;
+    .rp-hero h1 span { color: var(--blue); }
+    .rp-hero p {
+        font-size: 16px; color: var(--muted); line-height: 1.7;
+        max-width: 460px; margin: 0 auto 36px;
     }
-    .rp-feature::before {
-        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-        background: var(--pink); transform: scaleX(0); transition: transform 0.2s;
-    }
-    .rp-feature:hover::before { transform: scaleX(1); }
-    .rp-feature:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
-    .rp-feature-icon { font-size: 18px; font-weight: 800; color: var(--dark); margin-bottom: 10px; }
-    .rp-feature-title { font-size: 13px; font-weight: 600; margin-bottom: 5px; }
-    .rp-feature-desc { font-size: 12px; color: var(--muted); line-height: 1.55; }
-    .rp-how { background: var(--bg); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 64px 32px; }
-    .rp-how-inner { max-width: 700px; margin: 0 auto; }
-    .rp-how-label { font-size: 11px; font-weight: 600; color: #9b9b9b; letter-spacing: 1px; text-align: center; margin-bottom: 10px; }
-    .rp-how-title { font-size: 28px; font-weight: 700; letter-spacing: -0.8px; text-align: center; margin-bottom: 40px; }
-    .rp-how-steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 28px; }
-    .rp-how-step { text-align: center; }
-    .rp-how-num { width: 32px; height: 32px; border-radius: 50%; background: var(--pink); color: white; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
-    .rp-how-step-title { font-size: 14px; font-weight: 600; margin-bottom: 5px; }
-    .rp-how-step-desc { font-size: 12px; color: var(--muted); line-height: 1.55; }
-    .rp-cta { max-width: 560px; margin: 0 auto; padding: 72px 32px; text-align: center; }
-    .rp-cta h2 { font-size: 32px; font-weight: 700; letter-spacing: -1px; margin-bottom: 12px; }
-    .rp-cta p { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
-    .rp-footer { border-top: 1px solid var(--border); padding: 20px 48px; display: flex; align-items: center; justify-content: space-between; }
-    .rp-footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
-    .rp-footer-p { font-size: 12px; color: #9b9b9b; }
 
-    /* Score preview on landing */
-    .rp-demo-card { border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px; background: white; max-width: 780px; margin: 0 auto; }
-    .rp-demo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .rp-demo-score-badge { background: var(--dark); color: white; border-radius: 8px; padding: 9px 18px; font-size: 22px; font-weight: 800; letter-spacing: -1px; }
-    .rp-score-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 11px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); margin-bottom: 4px; font-size: 13px; }
+    /* ── BENTO GRID ── */
+    .rp-bento {
+        max-width: 840px; margin: 40px auto 0; padding: 0 32px 56px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: auto auto;
+        gap: 12px;
+    }
+    .rp-bento-cell {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px;
+        position: relative; overflow: hidden;
+        transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .rp-bento-cell:hover {
+        box-shadow: 0 6px 24px rgba(37,99,235,0.08);
+        transform: translateY(-1px);
+    }
+    .rp-bento-cell::after {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: var(--blue);
+        transform: scaleX(0); transform-origin: left;
+        transition: transform 0.25s;
+    }
+    .rp-bento-cell:hover::after { transform: scaleX(1); }
+    .rp-bento-icon  { font-size: 20px; margin-bottom: 10px; }
+    .rp-bento-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+    .rp-bento-desc  { font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+    /* ── HOW IT WORKS ── */
+    .rp-how {
+        background: var(--bg);
+        border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+        padding: 60px 32px;
+    }
+    .rp-how-inner  { max-width: 700px; margin: 0 auto; }
+    .rp-how-label  { font-size: 11px; font-weight: 600; color: var(--blue); letter-spacing: 1px; text-align: center; margin-bottom: 10px; text-transform: uppercase; }
+    .rp-how-title  { font-size: 28px; font-weight: 700; letter-spacing: -0.8px; text-align: center; margin-bottom: 40px; color: var(--text); }
+    .rp-how-steps  { display: grid; grid-template-columns: repeat(3,1fr); gap: 28px; }
+    .rp-how-step   { text-align: center; }
+    .rp-how-num    { width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: white; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+    .rp-how-step-title { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: var(--text); }
+    .rp-how-step-desc  { font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+    /* ── CTA + FOOTER ── */
+    .rp-cta { max-width: 560px; margin: 0 auto; padding: 64px 32px; text-align: center; }
+    .rp-cta h2 { font-size: 30px; font-weight: 700; letter-spacing: -0.8px; margin-bottom: 12px; color: var(--text); }
+    .rp-cta p  { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
+    .rp-footer { border-top: 1px solid var(--border); padding: 20px 48px; display: flex; align-items: center; justify-content: space-between; }
+    .rp-footer-brand { font-weight: 700; font-size: 14px; color: var(--text); }
+    .rp-footer-p     { font-size: 12px; color: var(--muted); }
+
+    /* ── SCORE ROW ON LANDING ── */
+    .rp-score-row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 7px 11px; border-radius: 6px;
+        background: var(--bg); border: 1px solid var(--border);
+        margin-bottom: 4px; font-size: 13px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -2003,22 +2077,22 @@ def go_to(tab_index):
     st.rerun()
 
 LOGO_SVG = """<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="5" y="2" width="18" height="24" rx="2" stroke="#191919" stroke-width="1.8" fill="white"/>
-  <line x1="9" y1="9" x2="19" y2="9" stroke="#e9e9e7" stroke-width="1.2"/>
-  <line x1="9" y1="13" x2="19" y2="13" stroke="#e9e9e7" stroke-width="1.2"/>
-  <line x1="9" y1="17" x2="15" y2="17" stroke="#e9e9e7" stroke-width="1.2"/>
-  <circle cx="22" cy="22" r="7" fill="white" stroke="#191919" stroke-width="1.8"/>
-  <line x1="22" y1="17" x2="22" y2="22" stroke="#191919" stroke-width="2" stroke-linecap="round"/>
-  <line x1="22" y1="22" x2="25.5" y2="25.5" stroke="#be185d" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="22" cy="22" r="1.2" fill="#191919"/>
+  <rect x="5" y="2" width="18" height="24" rx="2" stroke="#0F172A" stroke-width="1.8" fill="white"/>
+  <line x1="9" y1="9" x2="19" y2="9" stroke="#E5E7EB" stroke-width="1.2"/>
+  <line x1="9" y1="13" x2="19" y2="13" stroke="#E5E7EB" stroke-width="1.2"/>
+  <line x1="9" y1="17" x2="15" y2="17" stroke="#E5E7EB" stroke-width="1.2"/>
+  <circle cx="22" cy="22" r="7" fill="white" stroke="#0F172A" stroke-width="1.8"/>
+  <line x1="22" y1="17" x2="22" y2="22" stroke="#0F172A" stroke-width="2" stroke-linecap="round"/>
+  <line x1="22" y1="22" x2="25.5" y2="25.5" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="22" cy="22" r="1.2" fill="#0F172A"/>
 </svg>"""
 
 LOGO_SVG_SM = """<svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="5" y="2" width="18" height="24" rx="2" stroke="#191919" stroke-width="1.8" fill="white"/>
-  <circle cx="22" cy="22" r="7" fill="white" stroke="#191919" stroke-width="1.8"/>
-  <line x1="22" y1="17" x2="22" y2="22" stroke="#191919" stroke-width="2" stroke-linecap="round"/>
-  <line x1="22" y1="22" x2="25.5" y2="25.5" stroke="#be185d" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="22" cy="22" r="1.2" fill="#191919"/>
+  <rect x="5" y="2" width="18" height="24" rx="2" stroke="#0F172A" stroke-width="1.8" fill="white"/>
+  <circle cx="22" cy="22" r="7" fill="white" stroke="#0F172A" stroke-width="1.8"/>
+  <line x1="22" y1="17" x2="22" y2="22" stroke="#0F172A" stroke-width="2" stroke-linecap="round"/>
+  <line x1="22" y1="22" x2="25.5" y2="25.5" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="22" cy="22" r="1.2" fill="#0F172A"/>
 </svg>"""
 
 
@@ -2052,44 +2126,57 @@ def render_step_bar(current):
 def render_landing():
     """Full ResumePilot landing page shown before user starts."""
 
-    # HERO section
-    st.markdown(f"""
-<div style="background:radial-gradient(ellipse 90% 50% at 50% -5%, #fce7f3 0%, #fff 60%);padding-bottom:20px;">
+    # HERO
+    st.markdown("""
+<div style="background:radial-gradient(ellipse 80% 45% at 50% -10%, #EFF6FF 0%, #F8FAFC 65%);padding-bottom:8px;">
   <div class="rp-hero">
-    <div class="rp-hero-badge">&#10022; Free for students &amp; graduates</div>
-    <h1>Land more<br><span>interviews.</span></h1>
-    <p>ResumePilot analyzes your resume against job requirements and helps you build stronger, more targeted applications in minutes.</p>
+    <h1>Turn any CV into a<br><span>job-targeted application.</span></h1>
+    <p>ResumePilot analyzes the job description, finds what your CV is missing, asks targeted questions, and creates a stronger resume without inventing experience.</p>
   </div>
-  <div class="rp-social-proof">No account needed &nbsp;&middot;&nbsp; No credit card &nbsp;&middot;&nbsp; <strong style="color:#191919;">English, Hebrew &amp; Arabic</strong> supported</div>
 </div>
     """, unsafe_allow_html=True)
 
-    # START BUTTON — real Streamlit button
-    st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([2, 1, 2])
+    # CTA BUTTON — real Streamlit widget
+    st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([2, 1.2, 2])
     with col2:
-        if st.button("Start for free →", type="primary", use_container_width=True):
+        if st.button("Start tailoring →", type="primary", use_container_width=True):
             st.session_state.show_landing = False
             st.rerun()
-    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
-    # FEATURES
+    # BENTO GRID — 6 features
     st.markdown("""
-<div class="rp-features">
-  <div class="rp-feature">
-    <div class="rp-feature-icon">&#8594;</div>
-    <div class="rp-feature-title">Semantic job matching</div>
-    <div class="rp-feature-desc">We don't just scan for keywords. We understand what the job actually requires.</div>
+<div class="rp-bento">
+  <div class="rp-bento-cell">
+    <div class="rp-bento-icon">🔍</div>
+    <div class="rp-bento-title">Semantic job matching</div>
+    <div class="rp-bento-desc">We don't just scan for keywords — we understand what the role actually requires and where your CV falls short.</div>
   </div>
-  <div class="rp-feature">
-    <div class="rp-feature-icon">&#8593;</div>
-    <div class="rp-feature-title">Honest AI tailoring</div>
-    <div class="rp-feature-desc">Your resume is rewritten using only your real experience. No invented skills, ever.</div>
+  <div class="rp-bento-cell">
+    <div class="rp-bento-icon">🎯</div>
+    <div class="rp-bento-title">Gap detection</div>
+    <div class="rp-bento-desc">Every missing ATS keyword, missing metric, and weak bullet is flagged clearly so you know exactly what to fix.</div>
   </div>
-  <div class="rp-feature">
-    <div class="rp-feature-icon">&#9711;</div>
-    <div class="rp-feature-title">3-language output</div>
-    <div class="rp-feature-desc">Download in English, Hebrew, or Arabic, formatted for the Israeli job market.</div>
+  <div class="rp-bento-cell">
+    <div class="rp-bento-icon">💬</div>
+    <div class="rp-bento-title">Targeted refinement questions</div>
+    <div class="rp-bento-desc">AI generates 5–8 personalized questions based on your actual CV gaps — not generic prompts.</div>
+  </div>
+  <div class="rp-bento-cell">
+    <div class="rp-bento-icon">✍️</div>
+    <div class="rp-bento-title">Honest AI rewriting</div>
+    <div class="rp-bento-desc">Your CV is rewritten using only what you told us — your real experience, your actual projects, your words.</div>
+  </div>
+  <div class="rp-bento-cell">
+    <div class="rp-bento-icon">🌐</div>
+    <div class="rp-bento-title">English / Hebrew / Arabic output</div>
+    <div class="rp-bento-desc">Professional localization via Claude — not word-by-word translation. Native phrasing for the Israeli job market.</div>
+  </div>
+  <div class="rp-bento-cell">
+    <div class="rp-bento-icon">📁</div>
+    <div class="rp-bento-title">DOCX export</div>
+    <div class="rp-bento-desc">Download a formatted, recruiter-ready DOCX or TXT file — ready to attach and send immediately.</div>
   </div>
 </div>
     """, unsafe_allow_html=True)
@@ -2098,8 +2185,8 @@ def render_landing():
     st.markdown("""
 <div class="rp-how">
   <div class="rp-how-inner">
-    <div class="rp-how-label">HOW IT WORKS</div>
-    <div class="rp-how-title">Three steps to a stronger application.</div>
+    <div class="rp-how-label">How it works</div>
+    <div class="rp-how-title">From job description to tailored CV in minutes.</div>
     <div class="rp-how-steps">
       <div class="rp-how-step">
         <div class="rp-how-num">1</div>
@@ -2108,34 +2195,30 @@ def render_landing():
       </div>
       <div class="rp-how-step">
         <div class="rp-how-num">2</div>
-        <div class="rp-how-step-title">Upload your resume</div>
-        <div class="rp-how-step-desc">We analyze it against the job and show you exactly what's strong, partial, or missing.</div>
+        <div class="rp-how-step-title">Upload your CV</div>
+        <div class="rp-how-step-desc">We analyze it, score the match, and pinpoint every gap worth addressing.</div>
       </div>
       <div class="rp-how-step">
         <div class="rp-how-num">3</div>
         <div class="rp-how-step-title">Download &amp; apply</div>
-        <div class="rp-how-step-desc">Get a tailored resume in English, Hebrew, or Arabic, ready to send.</div>
+        <div class="rp-how-step-desc">Get a tailored resume in English, Hebrew, or Arabic — ready to send.</div>
       </div>
     </div>
   </div>
 </div>
     """, unsafe_allow_html=True)
 
-    # CTA + FOOTER
+    # FOOTER
     st.markdown("""
-<div class="rp-cta">
-  <h2>Ready to land more interviews?</h2>
-  <p>It takes less than 5 minutes. No account needed.</p>
-</div>
 <div class="rp-footer">
   <div class="rp-footer-brand">ResumePilot</div>
-  <p class="rp-footer-p">Built for students. Free forever.</p>
+  <p class="rp-footer-p">AI-powered CV tailoring for the modern job market.</p>
 </div>
     """, unsafe_allow_html=True)
 
 
 def nav_buttons(current, can_proceed=True, proceed_label="Continue →", back_label="← Back"):
-    st.markdown("<div style='margin-top:24px;'>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:28px; padding-top:8px; border-top:1px solid #E5E7EB;'></div>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 6, 1])
     with col1:
         if current > 0:
@@ -2152,7 +2235,6 @@ def nav_buttons(current, can_proceed=True, proceed_label="Continue →", back_la
             )
             if btn:
                 go_to(current + 1)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ============================================================
@@ -2168,7 +2250,7 @@ if st.session_state.show_landing:
 render_header()
 current_tab = st.session_state.active_tab
 render_step_bar(current_tab)
-st.markdown("<hr style='border:none;border-top:1px solid #e9e9e7;margin-bottom:28px;'>", unsafe_allow_html=True)
+st.markdown("<hr style='border:none;border-top:1px solid #E5E7EB;margin-bottom:28px;'>", unsafe_allow_html=True)
 
 
 # ============================================================
@@ -2225,7 +2307,7 @@ Requirements:
             st.error(f"⚠️ {err}")
             job_ready = False
         else:
-            st.markdown('<div class="alert-green">Job description looks good.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="alert-box alert-green">✓ Job description looks good.</div>', unsafe_allow_html=True)
 
     nav_buttons(0, can_proceed=job_ready, proceed_label="Continue →")
 
@@ -2832,10 +2914,22 @@ elif current_tab == 5:
         job_slug = re.sub(r'[^a-zA-Z0-9]', '_', st.session_state.job_role) if st.session_state.job_role else "CV"
         f_name = f"{first_name}_{job_slug}_CV"
 
-        st.markdown("<hr style='border:none;border-top:1px solid #e9e9e7;margin:20px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border:none;border-top:1px solid #E5E7EB;margin:20px 0;'>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
 
         with c1:
+            st.markdown('<div class="rp-dl-fmt">DOCX</div><div class="rp-dl-desc">Recommended — send directly to employers</div>', unsafe_allow_html=True)
+            docx_buf = generate_docx(cv_f, active_lang)
+            st.download_button(
+                "📁 Download DOCX",
+                docx_buf,
+                file_name=f"{f_name}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                type="primary"
+            )
+
+        with c2:
             st.markdown('<div class="rp-dl-fmt">TXT</div><div class="rp-dl-desc">For online forms and portals</div>', unsafe_allow_html=True)
             h_map = HEADINGS_MAP[active_lang]
             section_order = [
@@ -2853,10 +2947,8 @@ elif current_tab == 5:
             for key, title in section_order:
                 v = cv_f.get(key,"").strip()
                 if v:
-                    # Clean skills subheadings
                     if key == "skills":
                         v = re.sub(r'(Technical Skills|Business & Professional Skills|Professional Skills)\s*[,\n]?', '', v, flags=re.IGNORECASE)
-                    # Expand inline bullets
                     v = re.sub(r'\s*•\s*', '\n  • ', v)
                     txt_out += f"{title.upper()}\n{'-'*len(title)}\n{v.strip()}\n\n"
             st.download_button(
@@ -2865,19 +2957,7 @@ elif current_tab == 5:
                 file_name=f"{f_name}.txt",
                 mime="text/plain",
                 use_container_width=True,
-                type="primary"
-            )
-
-        with c2:
-            st.markdown('<div class="rp-dl-fmt">DOCX</div><div class="rp-dl-desc">Recommended — send directly to employers</div>', unsafe_allow_html=True)
-            docx_buf = generate_docx(cv_f, active_lang)
-            st.download_button(
-                "📁 Download DOCX",
-                docx_buf,
-                file_name=f"{f_name}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True,
-                type="primary"
+                type="secondary"
             )
 
         st.markdown("""
