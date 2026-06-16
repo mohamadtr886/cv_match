@@ -7,6 +7,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 import PyPDF2
 import re
+import json
 from collections import Counter
 
 # --- PAGE CONFIGURATION ---
@@ -35,8 +36,11 @@ defaults = {
     'job_desc': "",
     'input_method': "Upload File",
     'manual_cv_data': {},
-    'follow_up_answers': {},
+    'follow_up_answers': {},        # {key: {question, answer, section, gap_addressed}}
     'analysis_results': {"matches": [], "missing": [], "score": 0},
+    'ai_cv_analysis': {},           # Step 1+2: deep CV+JD analysis from Claude
+    'dynamic_questions': [],        # Step 3: personalized questions [{key, question, hint, section, gap_addressed}]
+    'improvement_log': [],          # Step 10: [{type, section, description}]
     'final_cv_data': {},
     'adjusted_cv_data': {},
     'active_lang': "English",
@@ -662,63 +666,22 @@ def get_anthropic_api_key():
         return None
 
 
-def call_claude_for_semantic_boost(cv_text, job_desc, job_role, rule_results):
-    """
-    Optional Claude API call for semantic insight layer.
-    Sends only the partial + missing items to Claude for a smarter verdict.
-    Falls back gracefully if API is unavailable.
-    Returns: dict with ai_insight string, adjusted_score, reclassified items.
-    """
-    import json
+# ============================================================
+# CORE AI PIPELINE — 11-STEP CV TAILORING ENGINE
+# ============================================================
 
+def claude_api_call(prompt, max_tokens=3000):
+    """Central Claude API caller. Returns raw text or None on any failure."""
     api_key = get_anthropic_api_key()
     if not api_key:
         return None
-
-    partial_labels = [g["label"] for g in rule_results["partial"]]
-    missing_labels = [g["label"] for g in rule_results["missing"]]
-
-    if not partial_labels and not missing_labels:
-        return None   # Nothing uncertain to send
-
-    prompt = f"""You are an expert CV analyst. A student is applying for: {job_role}
-
-RULE-BASED SYSTEM already confirmed these as STRONG matches (do not re-evaluate):
-{", ".join(g["label"] for g in rule_results["strong"])}
-
-UNCERTAIN items (partial or missing from rule-based system):
-Partial: {", ".join(partial_labels) if partial_labels else "none"}
-Missing: {", ".join(missing_labels) if missing_labels else "none"}
-
-CV TEXT (abbreviated):
-{cv_text[:2500]}
-
-JOB DESCRIPTION (abbreviated):
-{job_desc[:1500]}
-
-Your task:
-1. For each PARTIAL item: decide if it should be upgraded to "strong" or stay "partial"
-2. For each MISSING item: decide if the CV actually shows this skill indirectly (upgrade to "partial") or it is truly missing
-3. Write 2-3 sentences of honest, specific feedback for this student
-4. Suggest 2 concrete things they should add to their CV
-
-Respond in JSON only, no markdown:
-{{
-  "upgrades_to_strong": ["label1", "label2"],
-  "upgrades_to_partial": ["label3"],
-  "truly_missing": ["label4"],
-  "feedback": "2-3 sentence honest assessment",
-  "suggestions": ["suggestion1", "suggestion2"]
-}}"""
-
+    import urllib.request
     try:
-        import urllib.request
         payload = json.dumps({
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 1000,
+            "model": "claude-sonnet-4-6",
+            "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}]
         }).encode()
-
         req = urllib.request.Request(
             "https://api.anthropic.com/v1/messages",
             data=payload,
@@ -728,14 +691,306 @@ Respond in JSON only, no markdown:
                 "x-api-key": api_key,
             }
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
-            text = data["content"][0]["text"]
-            # Strip markdown code fences if present
-            text = re.sub(r'```(?:json)?', '', text).strip()
-            return json.loads(text)
+            return data["content"][0]["text"]
     except Exception:
-        return None   # Silent fail — rule-based result stands
+        return None
+
+
+def parse_json_response(text):
+    """Strip code fences and parse JSON from a Claude response."""
+    if not text:
+        return None
+    text = re.sub(r'```(?:json)?\s*', '', text).strip().strip('`').strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        m = re.search(r'\{[\s\S]*\}', text)
+        if m:
+            try:
+                return json.loads(m.group())
+            except Exception:
+                pass
+    return None
+
+
+def build_sections_text(cv_sections, max_per_section=700):
+    """Format CV sections as labeled text blocks for Claude prompts."""
+    out = ""
+    order = ["personal_details", "summary", "education", "experience",
+             "projects", "skills", "volunteering", "courses_training", "languages"]
+    for key in order:
+        val = cv_sections.get(key, "").strip()
+        if val:
+            label = key.upper().replace("_", " ")
+            out += f"\n[{label}]\n{val[:max_per_section]}\n"
+    return out
+
+
+# ── STEP 1+2: Deep CV Analysis + Job Requirement Extraction ──
+def call_claude_deep_analysis(cv_sections, job_role, job_desc):
+    """
+    Steps 1+2: Analyze CV structure, identify strengths/weaknesses,
+    extract job requirements, compute ATS gaps and match score.
+    Returns structured dict or None.
+    """
+    sections_text = build_sections_text(cv_sections)
+    prompt = f"""You are a senior technical recruiter with 15 years of experience. Analyze this CV against the job description and return a precise, honest assessment.
+
+TARGET ROLE: {job_role}
+
+JOB DESCRIPTION:
+{job_desc[:2000]}
+
+CV CONTENT:
+{sections_text[:3000]}
+
+Return ONLY a JSON object (no markdown, no explanation):
+{{
+  "cv_strengths": ["specific strength referencing actual CV content", "another strength"],
+  "cv_weaknesses": ["specific gap or weakness", "another gap"],
+  "hard_skills_required": ["Python", "SQL", "exact hard skill from JD"],
+  "soft_skills_required": ["communication", "exact soft skill from JD"],
+  "domain_knowledge_required": ["data analysis", "specific domain expertise from JD"],
+  "seniority_level": "junior",
+  "ats_keywords_missing": ["exact phrase from JD absent from CV", "another keyword"],
+  "ats_keywords_present": ["keyword found in both JD and CV"],
+  "match_score": 68,
+  "match_label": "Moderate Match",
+  "score_rationale": "Honest 2-sentence explanation referencing actual CV content and JD requirements.",
+  "metrics_missing": ["Experience bullet that needs a number or outcome added"],
+  "quick_wins": ["Most impactful improvement #1", "Most impactful improvement #2", "Most impactful improvement #3"]
+}}
+
+STRICT RULES:
+- match_score must be 0-100 integer — be realistic, not generous
+- ats_keywords_missing: copy exact phrases/words from JD that are absent from the CV
+- metrics_missing: paraphrase actual bullets from the CV that would benefit from quantification
+- cv_strengths: cite only what is actually in this CV — no generic praise
+- match_label must be one of: "Weak Match", "Moderate Match", "Strong Match" """
+
+    raw = claude_api_call(prompt, max_tokens=2000)
+    return parse_json_response(raw)
+
+
+# ── STEP 3+4: Dynamic Question Generation & Structured Memory ──
+def call_claude_generate_questions(cv_sections, job_role, job_desc, ai_analysis):
+    """
+    Step 3: Generate 5-8 specific, personalized questions targeting gaps
+    identified in the deep analysis. NOT generic questions.
+    Returns list of question dicts or [].
+    """
+    sections_text = build_sections_text(cv_sections, max_per_section=400)
+    ats_missing    = (ai_analysis or {}).get("ats_keywords_missing", [])[:8]
+    weaknesses     = (ai_analysis or {}).get("cv_weaknesses", [])[:5]
+    metrics_gaps   = (ai_analysis or {}).get("metrics_missing", [])[:4]
+
+    prompt = f"""You are a career coach helping a candidate strengthen their CV application. Generate 5-8 highly specific, personalized questions to uncover information that will make this CV noticeably stronger.
+
+TARGET ROLE: {job_role}
+
+CV GAPS IDENTIFIED BY ANALYSIS:
+- Missing ATS keywords: {', '.join(ats_missing) or 'see CV below'}
+- CV weaknesses: {', '.join(weaknesses) or 'see CV below'}
+- Bullets needing metrics: {', '.join(metrics_gaps) or 'see CV below'}
+
+CURRENT CV (abbreviated):
+{sections_text[:2500]}
+
+QUESTION QUALITY BENCHMARK:
+BAD: "Do you have SQL experience?" — too closed, not personalized
+GOOD: "Your CV shows Python for data analysis — have you also used SQL to query databases, even in university coursework or side projects?"
+
+BAD: "Tell us about your leadership skills"
+GOOD: "You mention tutoring students — how many did you tutor, over what time period, and did you notice measurable improvement in their academic performance?"
+
+BAD: "Describe a challenge you overcame"
+GOOD: "Your network analysis project — what was the dataset size, and what specific finding or result did the analysis produce?"
+
+Generate questions that:
+1. Reference SPECIFIC content actually in this CV (name the project, role, or skill)
+2. Target the identified gaps and missing keywords from the job description
+3. Uncover quantifiable achievements (scope, numbers, outcomes)
+4. Surface relevant experience with JD keywords the CV is missing
+
+Return ONLY JSON:
+{{
+  "questions": [
+    {{
+      "key": "q_unique_snake_case_key",
+      "question": "Full specific question text referencing their actual CV",
+      "hint": "e.g., 'I tutored 15 students over 6 months, their grades improved by...'",
+      "section": "experience",
+      "gap_addressed": "Adds scope and outcome metrics to tutoring entry"
+    }}
+  ]
+}}
+
+Generate exactly 5-8 questions. Every question must be specific to THIS person's CV."""
+
+    raw = claude_api_call(prompt, max_tokens=1500)
+    result = parse_json_response(raw)
+    if result and isinstance(result.get("questions"), list):
+        return result["questions"]
+    return []
+
+
+# ── STEPS 5-10: Full CV Rewrite — ATS, Summary, Bullets, Localization Prep ──
+def call_claude_rewrite_cv(cv_sections, job_role, job_desc, ai_analysis, follow_up_answers):
+    """
+    Steps 5-10: True CV reconstruction using original CV + job description
+    + all user answers. Produces professional-recruiter-quality output.
+    Returns dict with rewritten sections + improvement_log, or None.
+    """
+    sections_text = build_sections_text(cv_sections)
+
+    # Format answers preserving the structured memory (Step 4)
+    answers_formatted = ""
+    if follow_up_answers:
+        for key, val in follow_up_answers.items():
+            if isinstance(val, dict) and val.get("answer", "").strip():
+                q = val.get("question", key)
+                a = val["answer"].strip()
+                answers_formatted += f"Q: {q}\nA: {a}\n\n"
+            elif isinstance(val, str) and val.strip():
+                answers_formatted += f"- {val.strip()}\n"
+
+    ats_missing  = (ai_analysis or {}).get("ats_keywords_missing", [])[:12]
+    strengths    = (ai_analysis or {}).get("cv_strengths", [])[:5]
+    hard_skills  = (ai_analysis or {}).get("hard_skills_required", [])[:8]
+
+    prompt = f"""You are a professional CV writer with 15 years of experience placing candidates at top companies. Rewrite this CV to be a compelling, targeted application. Think like a human recruiter reading hundreds of CVs — make this one stand out.
+
+TARGET ROLE: {job_role}
+
+JOB DESCRIPTION:
+{job_desc[:1500]}
+
+ANALYSIS RESULTS:
+- ATS keywords to inject naturally (only where genuinely applicable): {', '.join(ats_missing) or 'none'}
+- Confirmed strengths to emphasize: {', '.join(strengths) or 'see CV'}
+- Hard skills required by the role: {', '.join(hard_skills) or 'see JD'}
+
+USER'S ANSWERS (CONFIRMED REAL INFORMATION — integrate these actively into the rewrite):
+{answers_formatted if answers_formatted else "No additional answers provided — rewrite from CV content only."}
+
+ORIGINAL CV:
+{sections_text}
+
+=== YOUR REWRITING INSTRUCTIONS ===
+
+[PROFESSIONAL SUMMARY] — Write a completely new 3-4 sentence paragraph:
+  • Open with the candidate's level + target role: "Final-year [field] student / [X]-year professional targeting a [role] position..."
+  • Name their 2-3 strongest relevant technical skills with specific tools mentioned in the CV
+  • Include their top achievement or differentiator (from CV or user answers)
+  • Close with what value they bring — confident, active voice
+  • AVOID: "hardworking", "passionate learner", "team player" as empty openers
+
+[EXPERIENCE] — For EACH position, rewrite bullet points to:
+  • Begin with a strong past-tense action verb: Developed, Engineered, Analyzed, Led, Designed, Optimized, Delivered, Streamlined, Reduced, Increased, Automated, Built
+  • Add specifics from user answers (numbers of people, duration, outcome) if provided
+  • Inject 1-2 JD keywords per bullet where they naturally apply — never force them
+  • One bullet = one achievement, not a task description
+
+[PROJECTS] — Rewrite each project entry to:
+  • Lead with what was built and what tool: "Built a [X] using [Y] to [accomplish Z]"
+  • Include metrics (dataset rows, accuracy, users, time saved) IF user mentioned them in answers
+  • End with the impact or insight produced
+
+[SKILLS] — Reorder: most JD-relevant skills first. Add any skills the user confirmed in answers.
+
+[EDUCATION] — Keep all dates and institution names EXACTLY. Minor wording improvements only.
+
+[VOLUNTEERING/ACTIVITIES] — Strengthen action verbs. Keep facts identical.
+
+=== HARD RULES (violation = the output is wrong) ===
+• NEVER add companies, degrees, job titles, or dates not in the original CV
+• NEVER invent metrics (numbers, %, timeframes) unless the user explicitly stated them in their answers above
+• If user said "I don't have X" — do NOT add X anywhere
+• All proper nouns (university names, company names, tool names, city names) stay exactly as written
+• Only include sections that exist in the original CV
+
+Return ONLY valid JSON (no markdown fences, no preamble, no explanation):
+{{
+  "summary": "new professional summary paragraph",
+  "experience": "full rewritten experience section — keep all entries, strengthen all bullets",
+  "projects": "full rewritten projects section",
+  "skills": "reordered, enriched skills list",
+  "education": "education — minor improvements only, all names/dates identical",
+  "volunteering": "volunteering section",
+  "courses_training": "courses — unchanged",
+  "languages": "languages — unchanged",
+  "improvement_log": [
+    {{"type": "Improved", "section": "Summary", "description": "Rewrote to target {job_role} explicitly, led with Python/SQL as primary skills"}},
+    {{"type": "Added", "section": "Experience", "description": "Incorporated scope from user answer: tutored 40+ students over 2 semesters"}},
+    {{"type": "Reorganized", "section": "Skills", "description": "Moved Python and SQL to top — both are core requirements in JD"}}
+  ]
+}}"""
+
+    raw = claude_api_call(prompt, max_tokens=4500)
+    return parse_json_response(raw)
+
+
+# ── STEP 9: Professional Multilingual Localization via Claude ──
+def call_claude_localize_cv(cv_data, target_lang):
+    """
+    Step 9: Localize the CV to Hebrew or Arabic using Claude.
+    Native-level professional phrasing — not word-by-word translation.
+    Falls back to googletrans if Claude unavailable.
+    """
+    lang_style = {
+        "Hebrew": (
+            "professional Israeli Hebrew (עברית מקצועית לשוק העבודה הישראלי). "
+            "Use formal Israeli CV conventions and natural Hebrew phrasing — "
+            "this is LOCALIZATION by a native Israeli CV writer, not a word-by-word translation."
+        ),
+        "Arabic": (
+            "professional Modern Standard Arabic suitable for the Israeli job market. "
+            "Use formal Arabic CV conventions — "
+            "this is LOCALIZATION by a native Arabic CV writer, not a word-by-word translation."
+        ),
+    }
+
+    sections_to_translate = {}
+    for key in ["summary", "education", "experience", "projects",
+                "skills", "volunteering", "courses_training", "languages"]:
+        val = cv_data.get(key, "").strip()
+        if val:
+            sections_to_translate[key] = val
+
+    if not sections_to_translate:
+        return cv_data
+
+    sections_json = json.dumps(sections_to_translate, ensure_ascii=False)
+
+    prompt = f"""Translate and localize this CV content to {lang_style[target_lang]}.
+
+MANDATORY RULES:
+- Keep ALL technical tool names in English: Python, SQL, Excel, GitHub, Tableau, TensorFlow, etc.
+- Keep ALL institution and company names in their original language
+- Keep ALL dates EXACTLY as written (2022–2025, Present, etc.)
+- Keep ALL numbers, percentages, and GPA values exactly
+- For Hebrew: use masculine formal forms as default
+- Do NOT translate proper nouns (universities, companies, cities, person names)
+
+CV SECTIONS TO LOCALIZE (JSON):
+{sections_json}
+
+Return the same JSON keys with localized text. Return ONLY the JSON object — no explanation, no markdown."""
+
+    raw = claude_api_call(prompt, max_tokens=4000)
+    result = parse_json_response(raw)
+
+    if result and isinstance(result, dict):
+        final = cv_data.copy()
+        for key, val in result.items():
+            if val and isinstance(val, str) and val.strip():
+                final[key] = val
+        return final
+
+    # Fallback to googletrans if Claude unavailable or failed
+    return translate_cv_googletrans(cv_data, target_lang)
 
 GENERIC_IGNORE_WORDS = NOISE_WORDS  # alias for backward compat
 
@@ -889,109 +1144,6 @@ def group_skills_segregated(skills_text):
         else:
             professional.append(s)
     return {"PROFESSIONAL": list(dict.fromkeys(professional)), "TECHNICAL": list(dict.fromkeys(technical))}
-
-
-def call_claude_cv_adjustment(cv_sections, job_role, job_desc, analysis_results, follow_up_answers):
-    """
-    Calls Claude API to intelligently rewrite CV sections based on:
-    - The job description requirements
-    - What was matched / missing in analysis
-    - The user's refinement answers
-    - The original CV content (NO hallucination — only uses provided info)
-
-    Returns adjusted cv_sections dict, or None if API unavailable.
-    """
-    import json
-
-    strong  = analysis_results.get("matches", [])
-    partial = analysis_results.get("partial", [])
-    missing = analysis_results.get("missing", [])
-    score   = analysis_results.get("score", 0)
-
-    answers_text = "\n".join([f"- {v}" for v in follow_up_answers.values() if v.strip()])
-
-    # Build a clean text summary of each section for Claude
-    sections_text = ""
-    for key in ["summary","experience","projects","education","skills","volunteering","courses_training","languages"]:
-        val = cv_sections.get(key,"").strip()
-        if val:
-            sections_text += f"\n[{key.upper()}]\n{val[:600]}\n"
-
-    prompt = f"""You are a professional CV editor helping a student tailor their CV for a specific job.
-
-JOB ROLE: {job_role}
-
-JOB DESCRIPTION (key parts):
-{job_desc[:1200]}
-
-ANALYSIS RESULTS:
-- Already strong: {", ".join(strong) if strong else "none"}
-- Partial matches (present but weak): {", ".join(partial) if partial else "none"}
-- Missing requirements: {", ".join(missing) if missing else "none"}
-- Current match score: {score}%
-
-USER'S ADDITIONAL INFORMATION (from their answers — use this to strengthen the CV):
-{answers_text if answers_text else "No additional answers provided."}
-
-CURRENT CV SECTIONS:
-{sections_text}
-
-YOUR TASK — Rewrite each section to better match the job. STRICT RULES:
-1. NEVER invent jobs, degrees, skills, or experiences that are not in the original CV
-2. Only use information from the CV sections and the user's answers above
-3. Strengthen the SUMMARY to mention the job role and highlight relevant skills
-4. Improve bullet points in EXPERIENCE and PROJECTS to use stronger action verbs and highlight relevant skills
-5. Reorder SKILLS to put the most job-relevant skills first
-6. If the user provided answers about missing skills — incorporate that naturally (e.g., "Familiar with X through coursework")
-7. Keep the same structure — do not add new sections that don't exist
-8. Write in the same language as the original CV (English unless otherwise)
-9. Keep all dates, company names, university names exactly as they are
-
-Return ONLY a JSON object with these keys (include only sections that exist in the original):
-{{
-  "summary": "improved summary paragraph",
-  "experience": "improved experience text — keep same entries, improve bullet wording",
-  "projects": "improved projects text — keep same projects, improve descriptions",
-  "skills": "reordered and clean skills list",
-  "education": "education unchanged or minor wording improvement",
-  "volunteering": "volunteering unchanged or minor improvement",
-  "courses_training": "courses unchanged",
-  "languages": "languages unchanged"
-}}
-
-Return ONLY valid JSON. No explanation, no markdown fences."""
-
-    api_key = get_anthropic_api_key()
-    if not api_key:
-        return None
-
-    try:
-        import json as json_mod
-        import urllib.request
-
-        payload = json_mod.dumps({
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 2000,
-            "messages": [{"role": "user", "content": prompt}]
-        }).encode()
-
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01",
-                "x-api-key": api_key,
-            }
-        )
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            data = json_mod.loads(resp.read())
-            raw = data["content"][0]["text"]
-            raw = re.sub(r'```(?:json)?', '', raw).strip().strip('`')
-            adjusted = json_mod.loads(raw)
-            return adjusted
-    except Exception as e:
-        return None
 
 
 def build_final_cv(cv_sections, adjusted_sections, job_role):
@@ -1835,10 +1987,19 @@ TAB_ICONS = ["🎯", "📄", "📊", "✏️", "👁️", "⬇️"]
 
 def go_to(tab_index):
     st.session_state.active_tab = tab_index
-    # If user goes back before Preview, reset adjustment so it re-runs fresh
+    if tab_index < 2:
+        # Back to Job or CV Content — wipe deep analysis so it re-runs
+        st.session_state.ai_cv_analysis = {}
+        st.session_state.analysis_done = False
+    if tab_index < 3:
+        # Back before Refinement — wipe dynamic questions
+        st.session_state.dynamic_questions = []
     if tab_index < 4:
+        # Back before Preview — wipe rewrite output
         st.session_state.cv_adjusted = False
         st.session_state.adjusted_cv_data = {}
+        st.session_state.final_cv_data = {}
+        st.session_state.improvement_log = []
     st.rerun()
 
 LOGO_SVG = """<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2220,11 +2381,11 @@ elif current_tab == 1:
 elif current_tab == 2:
     st.markdown('<div class="rp-page-badge">STEP 3 OF 6</div>', unsafe_allow_html=True)
     st.markdown('<div class="rp-page-title">Match Analysis</div>', unsafe_allow_html=True)
-    st.markdown('<div class="rp-page-sub">We compared your resume against the job requirements. Here\'s what we found.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rp-page-sub">Deep AI analysis of your CV against this role — strengths, gaps, ATS keywords, and quick wins.</div>', unsafe_allow_html=True)
 
     cv_text = st.session_state.cv_full_text or "\n".join(st.session_state.manual_cv_data.values())
-    job_ok = bool(st.session_state.job_desc.strip())
-    cv_ok  = bool(cv_text.strip())
+    job_ok  = bool(st.session_state.job_desc.strip())
+    cv_ok   = bool(cv_text.strip())
 
     if not job_ok or not cv_ok:
         st.warning("Please complete The Job and CV Content steps first.")
@@ -2235,156 +2396,144 @@ elif current_tab == 2:
             st.error(f"⚠️ {err}")
             nav_buttons(2, can_proceed=False)
         else:
-            # ── Run rule-based analysis ──
-            rule_results = run_rule_based_analysis(cv_text, st.session_state.job_desc)
-            strong  = rule_results["strong"]
-            partial = rule_results["partial"]
-            missing = rule_results["missing"]
-            score   = rule_results["score"]
+            # ── Parse CV into sections ──
+            cv_sections = st.session_state.manual_cv_data.copy()
+            if not any(v.strip() for v in cv_sections.values()):
+                cv_sections = classify_sections_refined(cv_text)
 
-            # ── Optional Claude semantic boost ──
-            ai_boost = None
-            if strong or partial or missing:
-                with st.spinner("🤖 Running semantic analysis..."):
-                    ai_boost = call_claude_for_semantic_boost(
-                        cv_text, st.session_state.job_desc,
-                        st.session_state.job_role, rule_results
+            # ── Run deep Claude analysis (Step 1+2) ──
+            if not st.session_state.ai_cv_analysis:
+                with st.spinner("🤖 Analyzing your CV against the job requirements... (~15 seconds)"):
+                    result = call_claude_deep_analysis(
+                        cv_sections,
+                        st.session_state.job_role,
+                        st.session_state.job_desc,
                     )
-
-            # Apply Claude upgrades if available
-            if ai_boost:
-                upgrades_strong  = set(ai_boost.get("upgrades_to_strong", []))
-                upgrades_partial = set(ai_boost.get("upgrades_to_partial", []))
-                truly_missing    = set(ai_boost.get("truly_missing", []))
-
-                new_partial, new_missing = [], []
-                for item in partial:
-                    if item["label"] in upgrades_strong:
-                        item["ai_upgraded"] = True
-                        strong.append(item)
+                if result:
+                    st.session_state.ai_cv_analysis = result
+                else:
+                    # Fallback: run rule-based and build a compatible structure
+                    rule = run_rule_based_analysis(cv_text, st.session_state.job_desc)
+                    st.session_state.ai_cv_analysis = {
+                        "cv_strengths":           [g["label"] for g in rule["strong"]],
+                        "cv_weaknesses":          [g["label"] for g in rule["missing"]],
+                        "hard_skills_required":   [g["label"] for g in rule["missing"]],
+                        "soft_skills_required":   [],
+                        "domain_knowledge_required": [],
+                        "ats_keywords_missing":   [g["label"] for g in rule["missing"]],
+                        "ats_keywords_present":   [g["label"] for g in rule["strong"]],
+                        "match_score":            rule["score"],
+                        "match_label":            ("Strong Match" if rule["score"] >= 70
+                                                   else "Moderate Match" if rule["score"] >= 45
+                                                   else "Weak Match"),
+                        "score_rationale":        "Based on rule-based keyword matching (AI unavailable).",
+                        "metrics_missing":        [],
+                        "quick_wins":             [f"Add {g['label']} to your CV" for g in rule["missing"][:3]],
+                    }
+                    if get_anthropic_api_key() is None:
+                        st.error("⚠️ **ANTHROPIC_API_KEY not found.** Add it to `.streamlit/secrets.toml` to enable AI analysis. Showing rule-based results.")
                     else:
-                        new_partial.append(item)
-                partial = new_partial
+                        st.warning("⚠️ AI analysis failed (API error). Showing rule-based results.")
 
-                for item in missing:
-                    if item["label"] in upgrades_partial:
-                        item["ai_upgraded"] = True
-                        partial.append(item)
-                    elif item["label"] not in truly_missing:
-                        item["ai_upgraded"] = True
-                        partial.append(item)
-                    else:
-                        new_missing.append(item)
-                missing = new_missing
-
-                # Recalculate score with upgrades
-                total_w = sum(g["weight"] for g in rule_results["groups"])
-                earned_w = (sum(g["weight"] for g in strong) +
-                            sum(g["weight"] * 0.5 for g in partial))
-                if total_w > 0:
-                    score = round(min(88, max(20, earned_w / total_w * 100)))
-
-            # Save to session
+            # Persist to analysis_results for downstream tabs
+            ai = st.session_state.ai_cv_analysis
             st.session_state.analysis_results = {
-                "matches": [g["label"] for g in strong],
-                "partial": [g["label"] for g in partial],
-                "missing": [g["label"] for g in missing],
-                "score": score,
-                "ai_boost": ai_boost,
+                "matches": ai.get("ats_keywords_present", []),
+                "missing": ai.get("ats_keywords_missing", []),
+                "score":   ai.get("match_score", 0),
             }
             st.session_state.analysis_done = True
 
-            # ════════════════════════════════
-            # UI RENDERING
-            # ════════════════════════════════
-
-            # ── Score header ──
+            score = ai.get("match_score", 0)
             score_color = "#16a34a" if score >= 70 else "#ea580c" if score >= 45 else "#dc2626"
-            score_label = "Strong Match 🟢" if score >= 70 else "Moderate Match 🟡" if score >= 45 else "Weak Match 🔴"
-            score_msg   = ("Your CV aligns well with this role. A few refinements could make it even stronger."
-                           if score >= 70 else
-                           "You have relevant experience but some gaps to address before applying."
-                           if score >= 45 else
-                           "There are significant gaps between your CV and this role. Focus on the missing items below.")
 
+            # ── Score Card ──
             st.markdown(f"""
-            <div class="content-card" style="text-align:center; padding: 2rem;">
-                <div style="font-size:5rem; font-weight:900; color:{score_color}; line-height:1;">{score}%</div>
-                <div style="font-size:1.3rem; font-weight:700; color:{score_color}; margin:8px 0;">{score_label}</div>
-                <div style="color:#64748b; font-size:0.95rem; max-width:500px; margin:0 auto;">{score_msg}</div>
-                <div style="margin-top:1rem; color:#94a3b8; font-size:0.85rem;">
-                    ✅ {len(strong)} strong &nbsp;·&nbsp; 〰️ {len(partial)} partial &nbsp;·&nbsp; ❌ {len(missing)} missing
-                    {"&nbsp;·&nbsp; 🤖 AI-enhanced" if ai_boost else ""}
+            <div class="content-card" style="text-align:center; padding:2rem;">
+                <div style="font-size:5rem;font-weight:900;color:{score_color};line-height:1;">{score}%</div>
+                <div style="font-size:1.3rem;font-weight:700;color:{score_color};margin:8px 0;">{ai.get("match_label","")}</div>
+                <div style="color:#64748b;font-size:0.95rem;max-width:520px;margin:0 auto;line-height:1.6;">
+                    {ai.get("score_rationale","")}
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
             st.markdown("---")
 
-            # ── Three columns: Strong / Partial / Missing ──
-            col_s, col_p, col_m = st.columns(3)
+            # ── Strengths and Weaknesses ──
+            col_s, col_w = st.columns(2)
+            strengths  = ai.get("cv_strengths", [])
+            weaknesses = ai.get("cv_weaknesses", [])
 
             with col_s:
-                st.markdown(f"""<div style="background:#f0fdf4; border:1px solid #bbf7d0;
-                    border-radius:12px; padding:1.2rem;">
-                    <div style="font-weight:700; color:#16a34a; font-size:1rem; margin-bottom:0.8rem;">
-                    ✅ Strong Match ({len(strong)})</div>""", unsafe_allow_html=True)
-                if strong:
-                    for item in strong:
-                        ai_badge = ' <span style="font-size:0.7rem;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:9999px;">AI</span>' if item.get("ai_upgraded") else ""
-                        ev = f'<span style="color:#6b7280;font-size:0.75rem;"> ({item["evidence"]})</span>' if item.get("evidence") else ""
-                        st.markdown(f'<div style="margin-bottom:6px;font-size:0.88rem;font-weight:600;color:#166534;">✓ {item["label"]}{ai_badge}{ev}</div>', unsafe_allow_html=True)
+                st.markdown("""<div style="background:#f0fdf4;border:1px solid #bbf7d0;
+                    border-radius:12px;padding:1.2rem;">
+                    <div style="font-weight:700;color:#16a34a;font-size:1rem;margin-bottom:0.8rem;">
+                    ✅ CV Strengths</div>""", unsafe_allow_html=True)
+                if strengths:
+                    for s in strengths:
+                        st.markdown(f'<div style="margin-bottom:6px;font-size:0.88rem;color:#166534;">✓ {s}</div>', unsafe_allow_html=True)
                 else:
-                    st.markdown('<div style="color:#6b7280;font-size:0.85rem;">None yet — add more skills to your CV</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="color:#6b7280;font-size:0.85rem;">No clear strengths identified for this role.</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            with col_p:
-                st.markdown(f"""<div style="background:#fffbeb; border:1px solid #fde68a;
-                    border-radius:12px; padding:1.2rem;">
-                    <div style="font-weight:700; color:#b45309; font-size:1rem; margin-bottom:0.8rem;">
-                    〰️ Partial Match ({len(partial)})</div>""", unsafe_allow_html=True)
-                if partial:
-                    for item in partial:
-                        ai_badge = ' <span style="font-size:0.7rem;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:9999px;">AI</span>' if item.get("ai_upgraded") else ""
-                        ev = f'<span style="color:#6b7280;font-size:0.75rem;"> (found: {item["evidence"]})</span>' if item.get("evidence") else ""
-                        st.markdown(f'<div style="margin-bottom:6px;font-size:0.88rem;font-weight:600;color:#92400e;">〰 {item["label"]}{ai_badge}{ev}</div>', unsafe_allow_html=True)
+            with col_w:
+                st.markdown("""<div style="background:#fff1f2;border:1px solid #fecdd3;
+                    border-radius:12px;padding:1.2rem;">
+                    <div style="font-weight:700;color:#be123c;font-size:1rem;margin-bottom:0.8rem;">
+                    ⚠️ Gaps to Address</div>""", unsafe_allow_html=True)
+                if weaknesses:
+                    for w in weaknesses:
+                        st.markdown(f'<div style="margin-bottom:6px;font-size:0.88rem;color:#9f1239;">✗ {w}</div>', unsafe_allow_html=True)
                 else:
-                    st.markdown('<div style="color:#6b7280;font-size:0.85rem;">No partial matches</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="color:#16a34a;font-size:0.85rem;font-weight:600;">🎉 No major gaps!</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            with col_m:
-                st.markdown(f"""<div style="background:#fff1f2; border:1px solid #fecdd3;
-                    border-radius:12px; padding:1.2rem;">
-                    <div style="font-weight:700; color:#be123c; font-size:1rem; margin-bottom:0.8rem;">
-                    ❌ Missing ({len(missing)})</div>""", unsafe_allow_html=True)
-                if missing:
-                    for item in missing:
-                        st.markdown(f'<div style="margin-bottom:6px;font-size:0.88rem;font-weight:600;color:#9f1239;">✗ {item["label"]}</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="color:#16a34a;font-size:0.85rem;font-weight:600;">🎉 No critical gaps!</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("---")
 
-            # ── AI Feedback block ──
-            if ai_boost and ai_boost.get("feedback"):
+            # ── ATS Keywords ──
+            ats_missing  = ai.get("ats_keywords_missing", [])
+            ats_present  = ai.get("ats_keywords_present", [])
+            metrics_miss = ai.get("metrics_missing", [])
+
+            st.markdown("**🔍 ATS Keyword Analysis**")
+            col_ap, col_am = st.columns(2)
+            with col_ap:
+                if ats_present:
+                    st.markdown('<div style="background:#f0fdf4;border-radius:10px;padding:1rem;border:1px solid #bbf7d0;">', unsafe_allow_html=True)
+                    st.markdown('<div style="font-weight:700;color:#16a34a;font-size:0.9rem;margin-bottom:0.5rem;">✅ Keywords Present</div>', unsafe_allow_html=True)
+                    chips = " ".join(
+                        f'<span style="display:inline-block;background:#dcfce7;color:#166534;padding:3px 10px;border-radius:9999px;font-size:0.8rem;margin:2px;">{k}</span>'
+                        for k in ats_present[:12]
+                    )
+                    st.markdown(chips, unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            with col_am:
+                if ats_missing:
+                    st.markdown('<div style="background:#fff1f2;border-radius:10px;padding:1rem;border:1px solid #fecdd3;">', unsafe_allow_html=True)
+                    st.markdown('<div style="font-weight:700;color:#be123c;font-size:0.9rem;margin-bottom:0.5rem;">❌ Keywords Missing</div>', unsafe_allow_html=True)
+                    chips = " ".join(
+                        f'<span style="display:inline-block;background:#ffe4e6;color:#9f1239;padding:3px 10px;border-radius:9999px;font-size:0.8rem;margin:2px;">{k}</span>'
+                        for k in ats_missing[:12]
+                    )
+                    st.markdown(chips, unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── Bullets needing metrics ──
+            if metrics_miss:
                 st.markdown("---")
-                st.markdown(f"""
-                <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px; padding:1.5rem; margin-top:1rem;">
-                    <div style="font-weight:700; color:#0369a1; margin-bottom:0.5rem;">🤖 AI Assessment</div>
-                    <div style="color:#334155; font-size:0.95rem; line-height:1.6;">{ai_boost["feedback"]}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown("**📊 Bullets That Need Metrics (add numbers = more impact)**")
+                for m in metrics_miss:
+                    st.markdown(f'<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:6px;font-size:0.88rem;color:#78350f;">{m}</div>', unsafe_allow_html=True)
 
-                if ai_boost.get("suggestions"):
-                    st.markdown("**💡 What to add to your CV:**")
-                    for s in ai_boost["suggestions"]:
-                        st.markdown(f"- {s}")
-
-            # ── Actionable tips for missing items ──
-            elif missing:
+            # ── Quick Wins ──
+            quick_wins = ai.get("quick_wins", [])
+            if quick_wins:
                 st.markdown("---")
-                st.markdown("**💡 Action Plan — what to add to your CV:**")
-                for item in missing[:4]:
-                    st.markdown(f"- If you have any experience with **{item['label']}** — add it. Even coursework or self-study counts.")
+                st.markdown("**⚡ Quick Wins — biggest impact improvements**")
+                for i, qw in enumerate(quick_wins, 1):
+                    st.markdown(f'<div style="background:#f0f9ff;border-left:3px solid #0ea5e9;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:6px;font-size:0.88rem;color:#0c4a6e;">{i}. {qw}</div>', unsafe_allow_html=True)
 
             st.markdown("---")
             nav_buttons(2, can_proceed=True, proceed_label="Next: Refine CV →")
@@ -2396,68 +2545,113 @@ elif current_tab == 2:
 
 elif current_tab == 3:
     st.markdown('<div class="rp-page-badge">STEP 4 OF 6</div>', unsafe_allow_html=True)
-    st.markdown('<div class="rp-page-title">Refinement</div>', unsafe_allow_html=True)
-    st.markdown('<div class="rp-page-sub">Two quick questions. Your answers will strengthen the tailored resume.</div>', unsafe_allow_html=True)
-
-    missing = st.session_state.analysis_results.get("missing", [])
-    matches = st.session_state.analysis_results.get("matches", [])
-    partial = st.session_state.analysis_results.get("partial", [])
-    score   = st.session_state.analysis_results.get("score", 0)
+    st.markdown('<div class="rp-page-title">Refine Your CV</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rp-page-sub">Answer these personalized questions to unlock a stronger, more specific CV rewrite.</div>', unsafe_allow_html=True)
 
     if not st.session_state.analysis_done:
-        st.info("ℹ️ Run the analysis first (go to the Analysis tab).")
+        st.info("ℹ️ Please complete the Analysis step first.")
+        nav_buttons(3, can_proceed=False)
     else:
+        score = st.session_state.analysis_results.get("score", 0)
         if score >= 70:
-            st.success(f"🎉 Great news! Your CV already scores **{score}%** — strong match. Answer the questions below to make it even better.")
+            st.success(f"🎉 Your CV scores **{score}%** — strong match. Answer below to make it even sharper.")
         elif score >= 40:
-            st.warning(f"Your CV scores **{score}%**. Let's fill the gaps to strengthen your application.")
+            st.warning(f"Your CV scores **{score}%**. These answers will help fill the gaps.")
         else:
-            st.error(f"Your CV scores **{score}%**. There are gaps to address — answer the questions below honestly.")
+            st.error(f"Your CV scores **{score}%**. Be specific in your answers — they'll significantly improve the rewrite.")
 
         st.markdown("---")
 
-        if missing:
-            st.markdown("**Based on what's missing, answer these to improve your CV:**")
-            questions = []
-            for i, gap in enumerate(missing[:5]):
-                gap_label = gap if isinstance(gap, str) else gap.get("label", str(gap))
-                questions.append((
-                    f"q_gap_{i}",
-                    f"The role requires **{gap_label}**. Do you have any experience, coursework, or projects related to this? Describe briefly.",
-                    f"e.g., I studied {gap_label} in my university course / used it in a project / I don't have this yet"
-                ))
-        else:
-            st.success("✅ No critical gaps! Answer these to add more depth:")
-            questions = [
-                ("q_achievement", "What is your biggest achievement relevant to this role? Include any numbers or results.", "e.g., Built a model that improved prediction accuracy by 15%"),
-                ("q_motivation",  "Why do you want this specific role? (Used to improve your summary)", "e.g., Passionate about data-driven decision making..."),
-            ]
+        # ── Generate dynamic personalized questions (Step 3) ──
+        if not st.session_state.dynamic_questions:
+            cv_sections = st.session_state.manual_cv_data.copy()
+            if not any(v.strip() for v in cv_sections.values()):
+                cv_sections = classify_sections_refined(
+                    st.session_state.cv_full_text or ""
+                )
+            with st.spinner("🤖 Generating personalized questions for your CV... (~10 seconds)"):
+                questions = call_claude_generate_questions(
+                    cv_sections,
+                    st.session_state.job_role,
+                    st.session_state.job_desc,
+                    st.session_state.ai_cv_analysis,
+                )
+            if questions:
+                st.session_state.dynamic_questions = questions
+            else:
+                # Fallback: generic gap-based questions
+                missing = st.session_state.analysis_results.get("missing", [])
+                fallback_qs = []
+                for i, gap in enumerate(missing[:5]):
+                    gap_label = gap if isinstance(gap, str) else str(gap)
+                    fallback_qs.append({
+                        "key": f"q_gap_{i}",
+                        "question": f"The role requires **{gap_label}**. Do you have any experience, coursework, or projects involving this? Describe briefly.",
+                        "hint": f"e.g., I used {gap_label} in a university project / I studied it in [course] / I don't have this yet",
+                        "section": "skills",
+                        "gap_addressed": f"Clarifies exposure to {gap_label}",
+                    })
+                if not fallback_qs:
+                    fallback_qs = [
+                        {"key": "q_achievement", "question": "What is your biggest achievement relevant to this role? Include numbers or outcomes if possible.", "hint": "e.g., Built a model that improved accuracy by 15% / Led a team of 5 students for 6 months", "section": "experience", "gap_addressed": "Adds quantifiable achievement to rewrite"},
+                        {"key": "q_tools", "question": "Are there tools, platforms, or technologies you use regularly that aren't listed on your CV?", "hint": "e.g., I use Tableau weekly but forgot to add it / I've been learning AWS on the side", "section": "skills", "gap_addressed": "Surfaces unlisted relevant skills"},
+                    ]
+                st.session_state.dynamic_questions = fallback_qs
+                if get_anthropic_api_key() is None:
+                    st.error("⚠️ **ANTHROPIC_API_KEY not found.** Showing fallback questions. Add your key to enable personalized AI questions.")
+                else:
+                    st.warning("⚠️ Could not generate personalized questions (API error). Showing standard questions.")
 
-        for key, question, placeholder in questions:
-            st.markdown(f"**{question}**")
-            st.session_state.follow_up_answers[key] = st.text_area(
-                question,
-                value=st.session_state.follow_up_answers.get(key,""),
-                placeholder=placeholder,
+        # ── Render questions (Step 4: store all answers in structured memory) ──
+        questions = st.session_state.dynamic_questions
+        st.markdown(f"**Answer these {len(questions)} questions** — your answers are saved automatically and used to rewrite your CV:")
+        st.markdown("")
+
+        for q in questions:
+            key    = q.get("key", "q_unknown")
+            text   = q.get("question", "")
+            hint   = q.get("hint", "")
+            section= q.get("section", "")
+            gap    = q.get("gap_addressed", "")
+
+            # Show section badge if available
+            badge = f'<span style="font-size:0.72rem;background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:9999px;font-weight:600;margin-left:6px;text-transform:uppercase;">{section}</span>' if section else ""
+            st.markdown(f'<div style="font-weight:700;font-size:0.95rem;color:#1e293b;margin-bottom:4px;">{text}{badge}</div>', unsafe_allow_html=True)
+            if gap:
+                st.markdown(f'<div style="font-size:0.78rem;color:#64748b;margin-bottom:6px;">Why we ask: {gap}</div>', unsafe_allow_html=True)
+
+            # Retrieve prior answer (supports both old string format and new dict format)
+            prior = st.session_state.follow_up_answers.get(key, "")
+            if isinstance(prior, dict):
+                prior = prior.get("answer", "")
+
+            answer = st.text_area(
+                text,
+                value=prior,
+                placeholder=hint,
                 key=f"refine_{key}",
                 label_visibility="collapsed",
-                height=90
+                height=90,
             )
 
-        st.markdown("---")
-        st.markdown("**🔧 Wording Improvements (applied automatically):**")
-        improvements = [
-            ("❌ Weak", "✅ Stronger"),
-            ("assisted with...", "Engineered / Developed..."),
-            ("helped the team", "Optimized team outcomes"),
-            ("responsible for", "Directed / Led"),
-            ("worked on project", "Spearheaded project"),
-        ]
-        df = pd.DataFrame(improvements[1:], columns=improvements[0])
-        st.table(df)
+            # Store as structured memory (Step 4)
+            st.session_state.follow_up_answers[key] = {
+                "question":      text,
+                "answer":        answer,
+                "section":       section,
+                "gap_addressed": gap,
+            }
 
-    st.markdown('</div>', unsafe_allow_html=True)
-    nav_buttons(3, can_proceed=True, proceed_label="Next: Preview CV →")
+            st.markdown("")
+
+        st.markdown("---")
+        st.markdown('<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:1rem;font-size:0.88rem;color:#0369a1;">'
+                    '💡 <strong>Tip:</strong> Skip any question that doesn\'t apply — write "N/A" or leave it blank. '
+                    'The AI rewriter will only use the answers you provide. It will never invent information you didn\'t give.'
+                    '</div>', unsafe_allow_html=True)
+
+        st.markdown("")
+        nav_buttons(3, can_proceed=True, proceed_label="Next: Preview CV →")
 
 
 # ============================================================
@@ -2467,7 +2661,7 @@ elif current_tab == 3:
 elif current_tab == 4:
     st.markdown('<div class="rp-page-badge">STEP 5 OF 6</div>', unsafe_allow_html=True)
     st.markdown('<div class="rp-page-title">Preview</div>', unsafe_allow_html=True)
-    st.markdown('<div class="rp-page-sub">Your tailored resume. Choose output language and review before downloading.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rp-page-sub">Your professionally rewritten, ATS-optimized resume. Review before downloading.</div>', unsafe_allow_html=True)
 
     lang = st.radio("Output language:", ["English","Hebrew","Arabic"], horizontal=True, key="lang_select")
     if lang != st.session_state.active_lang:
@@ -2482,7 +2676,7 @@ elif current_tab == 4:
     # ── Get base CV sections ──
     base_data = st.session_state.manual_cv_data.copy()
     if not any(v.strip() for v in base_data.values()):
-        base_data = classify_sections_refined(st.session_state.cv_full_text)
+        base_data = classify_sections_refined(st.session_state.cv_full_text or "")
 
     has_content = any(v.strip() for v in base_data.values())
 
@@ -2490,50 +2684,56 @@ elif current_tab == 4:
         st.warning("⚠️ No CV content found. Please go back to **CV Content** and add your information.")
         nav_buttons(4, can_proceed=False)
     else:
-        # ── Step 1: Claude CV Adjustment (English, run once) ──
+        # ── Steps 5-10: Full CV Rewrite (English, run once per session) ──
         if not st.session_state.cv_adjusted:
-            with st.spinner("✨ Tailoring your CV for this role... (~10 seconds)"):
-                adjusted = call_claude_cv_adjustment(
+            with st.spinner("✨ Rewriting your CV for this role... (~20 seconds)"):
+                rewrite_result = call_claude_rewrite_cv(
                     base_data,
                     st.session_state.job_role,
                     st.session_state.job_desc,
-                    st.session_state.analysis_results,
+                    st.session_state.ai_cv_analysis,
                     st.session_state.follow_up_answers,
                 )
-            if adjusted:
-                st.session_state.adjusted_cv_data = build_final_cv(base_data, adjusted, st.session_state.job_role)
+
+            if rewrite_result:
+                # Extract improvement_log from the rewrite response (Step 10)
+                improvement_log = rewrite_result.pop("improvement_log", [])
+                st.session_state.improvement_log = improvement_log if isinstance(improvement_log, list) else []
+
+                st.session_state.adjusted_cv_data = build_final_cv(base_data, rewrite_result, st.session_state.job_role)
                 st.session_state.cv_adjusted = True
-                st.success("✅ CV tailored successfully!")
             else:
+                # Fallback: use original CV with minimal improvement
                 fallback = base_data.copy()
                 if st.session_state.job_role and fallback.get("summary"):
                     if st.session_state.job_role.lower() not in fallback["summary"].lower():
-                        fallback["summary"] = f"Motivated professional targeting a {st.session_state.job_role} role. " + fallback["summary"]
+                        fallback["summary"] = (
+                            f"Motivated professional targeting a {st.session_state.job_role} role. "
+                            + fallback["summary"]
+                        )
                 st.session_state.adjusted_cv_data = fallback
                 st.session_state.cv_adjusted = True
+                st.session_state.improvement_log = []
                 if get_anthropic_api_key() is None:
                     st.error(
                         "⚠️ **ANTHROPIC_API_KEY not found.** "
                         "Add it to `.streamlit/secrets.toml` as `ANTHROPIC_API_KEY = \"sk-ant-...\"` "
-                        "to enable AI tailoring. Showing your CV with basic improvements for now."
+                        "to enable AI rewriting. Showing your original CV for now."
                     )
                 else:
-                    st.warning("⚠️ AI tailoring failed (API error). Showing your CV with basic improvements.")
+                    st.warning("⚠️ AI rewrite failed (API error). Showing your original CV.")
 
         english_cv = st.session_state.adjusted_cv_data or base_data
 
-        # ── Step 2: Translation for Hebrew/Arabic ──
+        # ── Step 9: Localization for Hebrew / Arabic ──
         if lang in ["Hebrew", "Arabic"]:
             cache_key = f"translated_{lang}"
-            if cache_key not in st.session_state:
-                st.session_state[cache_key] = {}
-
             cached = st.session_state.get(cache_key, {})
             if not cached:
-                with st.spinner(f"🌐 Translating CV to {'Hebrew' if lang == 'Hebrew' else 'Arabic'}... (~15 seconds)"):
-                    translated = translate_cv_googletrans(english_cv, lang)
-                st.session_state[cache_key] = translated
-                final_cv = translated
+                with st.spinner(f"🌐 Localizing CV to {'Hebrew' if lang == 'Hebrew' else 'Arabic'}... (~15 seconds)"):
+                    localized = call_claude_localize_cv(english_cv, lang)
+                st.session_state[cache_key] = localized
+                final_cv = localized
             else:
                 final_cv = cached
         else:
@@ -2541,26 +2741,48 @@ elif current_tab == 4:
 
         st.session_state.final_cv_data = final_cv
 
-        # ── What changed panel ──
-        original_summary = base_data.get("summary","")
-        adjusted_summary = english_cv.get("summary","")
-        if original_summary and adjusted_summary and original_summary.strip() != adjusted_summary.strip():
-            with st.expander("👀 See what was improved in your CV"):
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("**Original:**")
-                    st.markdown(f'<div style="background:#fff1f2;padding:12px;border-radius:8px;font-size:0.88rem;color:#334155;">{original_summary}</div>', unsafe_allow_html=True)
-                with c2:
-                    st.markdown("**Tailored:**")
-                    st.markdown(f'<div style="background:#f0fdf4;padding:12px;border-radius:8px;font-size:0.88rem;color:#166534;">{adjusted_summary}</div>', unsafe_allow_html=True)
+        # ── Step 10: Improvement Log ──
+        improvement_log = st.session_state.improvement_log
+        if improvement_log:
+            with st.expander(f"📋 What changed in your CV ({len(improvement_log)} improvements)", expanded=False):
+                type_colors = {
+                    "Added":       ("#dcfce7", "#166534", "✅"),
+                    "Improved":    ("#dbeafe", "#1e40af", "✏️"),
+                    "Reorganized": ("#fef9c3", "#713f12", "🔀"),
+                }
+                for item in improvement_log:
+                    itype   = item.get("type", "Improved")
+                    section = item.get("section", "")
+                    desc    = item.get("description", "")
+                    bg, fg, icon = type_colors.get(itype, ("#f1f5f9", "#334155", "•"))
+                    st.markdown(
+                        f'<div style="background:{bg};border-radius:8px;padding:8px 12px;margin-bottom:6px;font-size:0.88rem;color:{fg};">'
+                        f'<strong>{icon} {itype}</strong> — <em>{section}</em>: {desc}</div>',
+                        unsafe_allow_html=True
+                    )
+        elif st.session_state.cv_adjusted:
+            # Show summary comparison if no structured log
+            original_summary = base_data.get("summary", "")
+            adjusted_summary = english_cv.get("summary", "")
+            if original_summary and adjusted_summary and original_summary.strip() != adjusted_summary.strip():
+                with st.expander("👀 Summary — before vs. after"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**Original:**")
+                        st.markdown(f'<div style="background:#fff1f2;padding:12px;border-radius:8px;font-size:0.88rem;color:#334155;">{original_summary}</div>', unsafe_allow_html=True)
+                    with c2:
+                        st.markdown("**Rewritten:**")
+                        st.markdown(f'<div style="background:#f0fdf4;padding:12px;border-radius:8px;font-size:0.88rem;color:#166534;">{adjusted_summary}</div>', unsafe_allow_html=True)
 
         # ── Regenerate button ──
         col_regen, _ = st.columns([1,4])
         with col_regen:
-            if st.button("🔄 Re-tailor CV"):
+            if st.button("🔄 Re-generate CV"):
                 st.session_state.cv_adjusted = False
                 st.session_state.adjusted_cv_data = {}
-                for k in ["translated_Hebrew","translated_Arabic"]:
+                st.session_state.final_cv_data = {}
+                st.session_state.improvement_log = []
+                for k in ["translated_Hebrew", "translated_Arabic"]:
                     if k in st.session_state:
                         del st.session_state[k]
                 st.rerun()
